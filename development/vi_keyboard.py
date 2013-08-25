@@ -43,7 +43,7 @@ _info = {
     },
     '4' : {
         'default' : { 'type' : 'extra' },
-        'shift' : { 'type' : 'motion', 'text' : 'end' }
+        'shift' : { 'type' : 'motion', 'text' : 'eol' }
     },
     '5' : {
         'default' : { 'type' : 'extra' },
@@ -51,7 +51,7 @@ _info = {
     },
     '6' : {
         'default' : { 'type' : 'extra' },
-        'shift' : { 'type' : 'motion', 'text' : '"soft" home' }
+        'shift' : { 'type' : 'motion', 'text' : '"soft" bol' }
     },
     '7' : {
         'default' : { 'type' : 'extra' },
@@ -66,159 +66,27 @@ _info = {
         'shift' : { 'type' : 'motion', 'text' : 'begin sentence' }
     },
     '0' : {
-        'default' : { 'type' : 'motion', 'text' : '"hard" home' },
+        'default' : { 'type' : 'motion', 'text' : '"hard" bol' },
         'shift' : { 'type' : 'motion', 'text' : 'end sentence' }
     },
     '-' : {
         'default' : { 'type' : 'motion', 'text' : 'prev line' },
-        'shift' : { 'type' : 'motion', 'text' : '"soft" home down' }
+        'shift' : { 'type' : 'motion', 'text' : '"soft" bol down' }
     },
     '=' : {
         'default' : { 'type' : 'operator', 'text' : 'auto format' },
         'shift' : { 'type' : 'motion', 'text' : 'next line' }
-    },
+    }
 
     #-- row 1 ----------------------------------------------------------------
-    'q' : {
-        'default' : { 'type' : 'command', 'text' : 'record macro' },
-        'shift' : { 'type' : 'command', 'text' : 'ex mode' }
-    },
-    'w' : {
-        'default' : { 'type' : 'motion', 'text' : 'next word' },
-        'shift' : { 'type' : 'motion', 'text' : 'next WORD' }
-    },
-    'e' : {
-        'default' : { 'type' : 'motion', 'text' : 'end word' },
-        'shift' : { 'type' : 'motion', 'text' : 'end WORD' }
-    },
-    'r' : {
-        'default' : { 'type' : 'command', 'text' : 'replace char' },
-        'shift' : { 'type' : 'insert', 'text' : 'replace mode' }
-    },
-    't' : {
-        'default' : { 'type' : 'motion', 'text' : '\'till' },
-        'shift' : { 'type' : 'motion', 'text' : '\'till' }
-    },
-    'y' : {
-        'default' : { 'type' : 'command', 'text' : 'yank' },
-        'shift' : { 'type' : 'command', 'text' : 'yank line' }
-    },
-    'u' : {
-        'default' : { 'type' : 'command', 'text' : 'undo' },
-        'shift' : { 'type' : 'command', 'text' : 'undo line' }
-    },
-    'i' : {
-        'default' : { 'type' : 'insert', 'text' : 'insert mode' },
-        'shift' : { 'type' : 'insert', 'text' : 'insert (home)' }
-    },
-    'o' : {
-        'default' : { 'type' : 'insert', 'text' : 'open below' },
-        'shift' : { 'type' : 'insert', 'text' : 'open above' }
-    },
-    'p' : {
-        'default' : { 'type' : 'command', 'text' : 'paste after' },
-        'shift' : { 'type' : 'command', 'text' : 'paste before' }
-    },
-    '[' : {
-        'default' : { 'type' : 'motion', 'text' : 'misc' },
-        'shift' : { 'type' : 'motion', 'text' : 'begin para' }
-    },
-    ']' : {
-        'default' : { 'type' : 'motion', 'text' : 'misc' },
-        'shift' : { 'type' : 'motion', 'text' : 'end para' }
-    },
-    '\\' : {
-        'default' : { 'type' : 'extra', 'text' : '(unused)' },
-        'shift' : { 'type' : 'motion', 'text' : 'home' }
-    },
 
     #-- row 2 ----------------------------------------------------------------
-    'a' : {
-        'default' : { 'type' : 'insert', 'text' : 'append' },
-        'shift' : { 'type' : 'insert', 'text' : 'append (end)' }
-    },
-    's' : {
-        'default' : { 'type' : 'command', 'text' : 'subst char' },
-        'shift' : { 'type' : 'command', 'text' : 'subst line' }
-    },
-    'd' : {
-        'default' : { 'type' : 'operator', 'text' : 'delete' },
-        'shift' : { 'type' : 'command', 'text' : 'delete to end' }
-    },
-    'f' : {
-        'default' : { 'type' : 'motion', 'text' : 'find char' },
-        'shift' : { 'type' : 'motion', 'text' : 'find char' }
-    },
-    'g' : {
-        'default' : { 'type' : 'extra', 'text' : 'extra' },
-        'shift' : { 'type' : 'motion', 'text' : 'goto line' }
-    },
-    'h' : {
-        'default' : { 'type' : 'motion', 'text' : 'left' },
-        'shift' : { 'type' : 'motion', 'text' : 'screen top' }
-    },
-    'j' : {
-        'default' : { 'type' : 'motion', 'text' : 'down' },
-        'shift' : { 'type' : 'command', 'text' : 'join lines' }
-    },
-    'k' : {
-        'default' : { 'type' : 'motion', 'text' : 'up' },
-        'shift' : { 'type' : 'command', 'text' : 'help' }
-    },
-    'l' : {
-        'default' : { 'type' : 'motion', 'text' : 'right' },
-        'shift' : { 'type' : 'motion', 'text' : 'screen bottom' }
-    },
-    ';' : {
-        'default' : { 'type' : 'motion', 'text' : 'repeat t/T/f/F' },
-        'shift' : { 'type' : 'command', 'text' : 'command line' }
-    },
-    '\'' : {
-        'default' : { 'type' : 'motion', 'text' : 'goto mark' },
-        'shift' : { 'type' : 'extra', 'text' : 'register' }
-    },
 
     #-- row 3 ----------------------------------------------------------------
-    'z' : {
-        'default' : { 'type' : 'extra', 'text' : 'extra' },
-        'shift' : { 'type' : 'extra', 'text' : 'quit' }
-    },
-    'x' : {
-        'default' : { 'type' : 'command', 'text' : 'delete' },
-        'shift' : { 'type' : 'command', 'text' : 'delete' }
-    },
-    'c' : {
-        'default' : { 'type' : 'operator', 'text' : 'change' },
-        'shift' : { 'type' : 'command', 'text' : 'change (end)' }
-    },
-    'v' : {
-        'default' : { 'type' : 'command', 'text' : 'visual mode' },
-        'shift' : { 'type' : 'command', 'text' : 'visual lines' }
-    },
-    'b' : {
-        'default' : { 'type' : 'motion', 'text' : 'prev word' },
-        'shift' : { 'type' : 'motion', 'text' : 'prev WORD' }
-    },
-    'n' : {
-        'default' : { 'type' : 'motion', 'text' : 'prev' },
-        'shift' : { 'type' : 'motion', 'text' : 'next' }
-    },
-    'm' : {
-        'default' : { 'type' : 'command', 'text' : 'set mark' },
-        'shift' : { 'type' : 'motion', 'text' : 'screen mid' }
-    },
-    ',' : {
-        'default' : { 'type' : 'motion', 'text' : 'reverse t/T/f/F' },
-        'shift' : { 'type' : 'motion', 'operator' : 'unindent' }
-    },
-    '.' : {
-        'default' : { 'type' : 'command', 'text' : 'repeat' },
-        'shift' : { 'type' : 'operator', 'text' : 'indent' }
-    },
-    '/' : {
-        'default' : { 'type' : 'motion', 'text' : 'find' },
-        'shift' : { 'type' : 'motion', 'text' : 'find' }
-    }
+
+    #-- row 4 ----------------------------------------------------------------
+
+    #-- row 5 ----------------------------------------------------------------
 
 }
 
@@ -255,14 +123,13 @@ def main( argv ):
         }
     }
 
-    kb = keyboard.keyboard( xscale = 80, yscale = 80 )
+    kb = keyboard.keyboard( xscale = 80, yscale = 40 )
 
     for ( k, s ) in key_styles.items():
         kb.style[ k ] = s
 
     for ( key_id, info ) in _info.items():
         k = keyboard.create_key( key_id )
-        k.flags |= keyboard.key.SHIFT
         if ( 'default' in info ) and ( 'text' in info[ 'default' ] ):
             k.add_label( 30, 33, info[ 'default' ][ 'text' ] )
         if ( 'shift' in info ) and ( 'text' in info[ 'shift' ] ):
