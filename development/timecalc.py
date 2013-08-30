@@ -1,92 +1,96 @@
 #!/usr/bin/env python
 ##############################################################################
 #
-# timecalc.py
+# aptime.py
 #
 # Time Calculator
 #
 ##############################################################################
 
 
-import os
 import re
-import Tkinter as tk
-import ttk
 
 
 #=============================================================================
-class timecalc( ttk.Frame ):
+class aptime:
+    """
+    Arbitrary precision time representation.
+    Specify any relative amount of time using a string.  Multiple formats can
+    be detected and parsed.  aptime objects are capable of basic arithmetic.
 
-    # application info
-    _author  = 'Zac Hester <zac.hester@gmail.com>'
-    _date    = '2013-08-23'
-    _icon    = 'timecalc.ico'
-    _title   = 'Time Calculator'
-    _version = '0.0.0'
+    Acceptable human string formats:
+        hhh:mm:ss.ffffff    hours, minutes, seconds, fractional seconds
+        hhh:mm:ss           hours, minutes, seconds
+        mm:ss.ffffff        minutes, seconds, fractional seconds
+        mm:ss               minutes, seconds
+        nnnn                seconds
+        nnnn.ffffff         seconds, fractional seconds
+    Hours and fractions of a second (f) can be specified as 1 or more digits.
 
-    # layout configs
-    _gridcfg_label = {
-        'padx'   : 4,
-        'pady'   : 4,
-        'sticky' : ( tk.E + tk.W )
-    }
-    _gridcfg_stick = {
-        'sticky' : ( tk.N + tk.S + tk.E + tk.W )
-    }
-    _gridcfg_wpad = {
-        'padx'   : 8,
-        'pady'   : 8
-    }
+    Unit suffixes can be used for long-string formats:
+        d h m s ms us ns ps
+
+    Epoch times (seconds since Unix epoch) can be used:
+        nnnnnnnnnn u
+
+    Fractional epoch times are okay, too:
+        nnnnnnnnnn.fff u
+    """
+
+    #=========================================================================
+    _units   = ( 'd',   'h',  'm', 's', 'ms',  'us', 'ns', 'ps'  )
+    _seconds = ( 86400, 3600, 60,  1,   0.001, 1e-6, 1e-9, 1e-12 )
+
+    #=========================================================================
+    def __init__( self, user ):
+        self.seconds = 0.0
+        self.user    = None
+        self.load( user )
+
+    #=========================================================================
+    def __cmp__( self, other ):
+        return cmp( self.seconds, other.seconds )
 
 
     #=========================================================================
-    def __init__( self, parent = None ):
-        """ Initializes frame instance """
-
-        # call the parent constructor
-        ttk.Frame.__init__( self, parent )
-
-        # create a place to keep widget state
-        self.wvars = {}
-
-        # set the application-wide default icon
-        if os.path.exists( timecalc._icon ):
-            self.master.call(
-                'wm',
-                'iconbitmap',
-                self.master._w,
-                '-default',
-                timecalc._icon
-            )
-
-        # set the application title
-        self.master.title( timecalc._title )
-
-        # this sets up the root frame to resize things
-        #   any descendent widgets will also need to use _gridcfg_stick
-        self.grid( **timecalc._gridcfg_stick )
-        top = self.winfo_toplevel()
-        top.rowconfigure( 0, weight = 1 )
-        top.columnconfigure( 0, weight = 1 )
-        self.rowconfigure( 0, weight = 1 )
-        self.columnconfigure( 0, weight = 1 )
-
-        # initialize the GUI's widgets
-        self._create_widgets()
-
-
     #=========================================================================
-    def _create_widgets( self ):
-        """ Builds the root frame's interface """
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    #=========================================================================
+    def load( self, user ):
+        self.user = user
 
-        # ZIH - left off here
-        pass
+        # attempt to match a human-readable time string
+        mo = re.match( r'(\d+):(\d\d)(:\d\d)?(\.\d+)?', self.user )
+        if mo is not None:
+            print '## human-readable string ##'
+            return
+
+        # set of characters may indicate long-format string with units
+        mo = re.match( r'[dhmsunp]', self.user )
+        if mo is not None:
+            print '## string with unit characters ##'
+            return
+
+        # numeric only, assume seconds
+        self.seconds = float( self.user )
 
 
 
 def get_ms( data ):
 
-    # ZIH - need to add support for mm:ss.fff pattern
+    # try to match a human-formatted time
     rm = re.match( r'(\d+):(\d\d)(:\d\d)?(\.\d+)?', data )
 
     # see if time was entered as a wall-clock time
@@ -111,11 +115,18 @@ def get_ms( data ):
             if f > 999:
                 f = int( matches[ 3 ][ 1 : 4 ] )
 
-        # h:mm:ss
+        # h:mm:ss or m:ss.fff
         elif len( matches ) == 3:
-            h = int( matches[ 0 ] )
-            m = int( matches[ 1 ] )
-            s = int( matches[ 2 ][ 1 : ] )  # slice off the :
+            if matches[ 2 ][ 0 ] == '.':
+                m = int( matches[ 0 ] )
+                s = int( matches[ 1 ] )
+                f = int( matches[ 2 ][ 1 : ] )
+                if f > 999:
+                    f = int( matches[ 2 ][ 1 : 4 ] )
+            else:
+                h = int( matches[ 0 ] )
+                m = int( matches[ 1 ] )
+                s = int( matches[ 2 ][ 1 : ] )  # slice off the :
 
         # m:ss
         elif len( matches ) == 2:
