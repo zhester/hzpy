@@ -5,6 +5,8 @@
 #
 # Arbitrary precision time representation, computation, and parsing.
 #
+# ZIH - looking to refactor as a subclass of numarb
+#
 ##############################################################################
 
 
@@ -64,16 +66,17 @@ class aptime( object ):
 
     #=========================================================================
     def __init__(
-            self,
-            user      = '0',
-            precision = P_SECOND,
-            output    = R_ROUND
+        self,
+        user      = '0',
+        precision = P_SECOND,
+        output    = R_ROUND
     ):
         """
         Initialize an aptime instance.
         @param user Initial user input string (or number)
         @param precision Maximum precision needed
         """
+
         self._seconds  = 0.0
         self.output    = output
         self.precision = precision
@@ -82,10 +85,24 @@ class aptime( object ):
 
 
     #=========================================================================
+    def __add__( self, other ):
+        """
+        """
+        ## ZIH - if we can switch to normalized type casting (not sure),
+        ##   we could avoid the isinstance() check, and just run a
+        ##   float() type cast on the other object (regardless of type)
+
+        if isinstance( other, ( int, float ) ) == True:
+            return self._sdup( self._seconds + other )
+        return self._sdup( self._seconds + other._seconds )
+
+
+    #=========================================================================
     def __cmp__( self, other ):
         """
         Time comparison magic method.
         """
+
         psecs = aptime._units[ self.precision ]
         upper_limit = self._seconds + psecs
         lower_limit = self._seconds - psecs
@@ -97,9 +114,20 @@ class aptime( object ):
 
 
     #=========================================================================
+    def __div__( self, other ):
+        """
+        """
+
+        if isinstance( other, ( int, float ) ) == True:
+            return self._sdup( self._seconds / other )
+        return self._sdup( self._seconds / other._seconds )
+
+
+    #=========================================================================
     def __float__( self ):
         """
         """
+
         return self._seconds / aptime._units[ self.precision ]
 
 
@@ -107,6 +135,7 @@ class aptime( object ):
     def __getattr__( self, name ):
         """
         """
+
         if name in aptime._pnames:
             return self.getn( aptime._pnames.index( name ) )
         if name in aptime._symbols:
@@ -118,6 +147,7 @@ class aptime( object ):
     def __int__( self ):
         """
         """
+
         value = self._seconds / aptime._units[ self.precision ]
         if self.output == aptime.R_FLOOR:
             return int( math.floor( value ) )
@@ -126,23 +156,60 @@ class aptime( object ):
         return int( round( value ) )
 
 
+    #=========================================================================
+    def __mul__( self, other ):
+        """
+        """
+
+        if isinstance( other, ( int, float ) ) == True:
+            return self._sdup( self._seconds * other )
+        return self._sdup( self._seconds * other._seconds )
+
 
     #=========================================================================
+    def __radd__( self, other ):
+        """
+        """
+
+        return self.__add__( other )
 
 
     #=========================================================================
+    def __rdiv__( self, other ):
+        """
+        """
+
+        if isinstance( other, ( int, float ) ) == True:
+            return self._sdup( other / self._seconds )
+        return self._sdup( other._seconds / self._seconds )
+
+
     #=========================================================================
+    def __rmul__( self, other ):
+        """
+        """
+
+        return self.__mul__( other )
+
+
     #=========================================================================
+    def __rsub__( self, other ):
+        """
+        """
+
+        if isinstance( other, ( int, float ) ) == True:
+            return self._sdup( other - self._seconds )
+        return self._sdup( other._seconds - self._seconds )
+
+
     #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
-    #=========================================================================
+    def __sub__( self, other ):
+        """
+        """
+
+        if isinstance( other, ( int, float ) ) == True:
+            return self._sdup( self._seconds - other )
+        return self._sdup( self._seconds - other._seconds )
 
 
     #=========================================================================
@@ -199,6 +266,14 @@ class aptime( object ):
 
         # numeric only, assume seconds
         self._seconds = float( self.user )
+
+
+    #=========================================================================
+    def _sdup( self, seconds ):
+        """
+        Duplicate object with a new time value.
+        """
+        return aptime( seconds, self.precision, self.output )
 
 
     #=========================================================================
