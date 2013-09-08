@@ -111,6 +111,7 @@ def _is_executable( path ):
     path += '.exe'
     if os.path.isfile( path ) == True:
         return os.access( path, os.X_OK )
+    return False
 
 
 #=============================================================================
