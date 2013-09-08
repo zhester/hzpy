@@ -6,6 +6,8 @@
 ##############################################################################
 
 
+import os
+import shlex
 import subprocess
 
 
@@ -46,25 +48,19 @@ def cmd( arguments, show = False ):
     #   either using a simple command mapping, or (preferably) executing the
     #   correct os.* function.
 
-    # see if the user wants to see the command
-    if show == True:
-        if type( arguments ) is str:
-            print arguments
-        else:
-            print subprocess.list2cmdline( arguments )
-
     # check for the need for shell parsing
     if type( arguments ) is str:
-        use_shell = True
-    else:
-        use_shell = False
+        arguments = shlex.split( arguments )
+
+    # see if the user wants to see the command
+    if show == True:
+        print subprocess.list2cmdline( arguments )
 
     # attempt to execute the requested command
     try:
         output = subprocess.check_output(
             arguments,
-            stderr = subprocess.STDOUT,
-            shell  = use_shell
+            stderr = subprocess.STDOUT
         )
 
     # if the commad flops, raise our own error exception
@@ -73,6 +69,92 @@ def cmd( arguments, show = False ):
 
     # return the output collected from the command
     return output
+
+
+#=============================================================================
+def oscmd( arguments, show = False ):
+    """
+    Executes arguments (list or string) as a Python OS command (portable).
+    This provides a simple string-mapped mechanism for building batches of
+    commands.  If the command in question needs a particular type, that type
+    must be handled by the user, and set correctly in the arguments list.
+    The first string in the arguments list must be an os.* function.
+    @param arguments Command arguments
+    @param show Set to True to display the final command using stdout
+    @return The normal return of the os.* function
+    @throw CommandError
+    """
+
+    # check for the need for shell parsing
+    if type( arguments ) is str:
+        arguments = shlex.split( arguments )
+
+    # see if this "command" is available in the os module
+    if hasattr( os, arguments[ 0 ] ):
+        call = getattr( os, arguments[ 0 ] )
+        if callable( call ):
+
+            # call the function, and return its return
+            return call( *arguments[ 1 : ] )
+
+    # os module doesn't have this string as a function
+    raise CommandError()
+
+
+#=============================================================================
+def _is_executable( path ):
+    """
+    Tests a path to determine if it is a valid executable.
+    """
+    if os.path.isfile( path ) == True:
+        return os.access( path, os.X_OK )
+    path += '.exe'
+    if os.path.isfile( path ) == True:
+        return os.access( path, os.X_OK )
+
+
+#=============================================================================
+def _which( target ):
+    """
+    which utility emulation function.
+
+    See Also:
+    http://code.google.com/p/which/source/browse/trunk/which.py
+    """
+
+    # attempt to split the target's dirname and basename
+    dirname, basename = os.path.split( target )
+
+    # target came with a dirname component
+    if dirname:
+
+        # if the target is executable...
+        if _is_executable( target ):
+
+            # return the given path
+            return target
+
+    # target has no dirname component
+    else:
+
+        # iterate through each search path
+        for path in os.environ[ 'PATH' ].split( os.pathsep ):
+
+            # some environments will quote the path
+            path = path.strip( '"\'' )
+
+            # construct a complete path to the program
+            target_path = os.path.join( path, target )
+
+            # if the target is executable...
+            if _is_executable( target_path ):
+
+                # return the complete path to the program
+                return target_path
+
+    # failed to find target in all search paths
+    return None
+
 
 
 #=============================================================================
@@ -101,6 +183,9 @@ def main( argv ):
             line = raw_input( 'cmd> ' )
             if line == 'exit':
                 break
+            if line[ : 1 ] == '!':
+                print oscmd( line[ 1 : ] )
+                continue
             try:
                 print cmd( line ).strip()
             except CommandError as error:
