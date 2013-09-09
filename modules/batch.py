@@ -6,9 +6,11 @@
 ##############################################################################
 
 
+import importlib
 import os
 import shlex
 import subprocess
+import sys
 
 
 #=============================================================================
@@ -72,6 +74,72 @@ def cmd( arguments, show = False ):
 
 
 #=============================================================================
+def funcmd( arguments, show = False ):
+    """
+    Executes arguments (list or string) as a Python function from any module.
+    The first string in the arguments list must be the name of a Python
+    function.  If that function exists within a module, the module must be
+    named in normal dot notation.  E.g. [ 'os.getcwd' ]
+    @param arguments Command arguments
+    @param show Set to True to display the final command using stdout
+    @return The normal return of the function
+    @throw CommandError
+    """
+
+    #### ZIH - show support
+
+    # check for the need for shell parsing
+    if type( arguments ) is str:
+        arguments = shlex.split( arguments )
+
+    # set some shortcuts
+    c = arguments[ 0 ]
+    g = globals()
+    b = g[ '__builtins__' ]
+
+    # see if the command requires a module
+    if c.index( '.' ) != -1:
+
+        # get the module name
+        parts = c.split( '.' )
+        module = '.'.join( parts[ 0 : -1 ] )
+        identifier = parts[ -1 ]
+
+        # see if we have the module already
+        if module not in g:
+            try:
+                g[ module ] = importlib.import_module( module )
+            except NameError:
+                raise CommandError( 'invalid module "%s"' % module )
+
+        # see if the module has an identifier of the same name
+        if hasattr( g[ module ], identifier ):
+            call = getattr( g[ module ], identifier )
+
+    # appears to be a global function
+    else:
+
+        # check global/user functions
+        if ( c in g ) and callable( g[ c ] ):
+            call = g[ c ]
+
+        # check built-in functions
+        elif hasattr( b, c ) == True:
+            call = getattr( b, c )
+
+        # couldn't find it
+        else:
+            raise CommandError( 'invalid identifier "%s"' % c )
+
+    # see how we did
+    if callable( call ) == False:
+        raise CommandError( 'invalid function reference "%s"' % c )
+
+    # call the function, and return its return
+    return call( *arguments[ 1 : ] )
+
+
+#=============================================================================
 def oscmd( arguments, show = False ):
     """
     Executes arguments (list or string) as a Python OS command (portable).
@@ -84,6 +152,9 @@ def oscmd( arguments, show = False ):
     @return The normal return of the os.* function
     @throw CommandError
     """
+
+    #### ZIH - show support
+    #### ZIH - just make this use funcmd( 'os.' + blahblah )
 
     # check for the need for shell parsing
     if type( arguments ) is str:
@@ -198,5 +269,4 @@ def main( argv ):
 
 #=============================================================================
 if __name__ == "__main__":
-    import sys
     sys.exit( main( sys.argv ) )
