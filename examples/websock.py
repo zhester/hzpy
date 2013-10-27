@@ -59,6 +59,285 @@ Sec-WebSocket-Protocol: sample
 
 
 #=============================================================================
+def load_fields( obj, fields, data ):
+    """
+    Load binary data into an object's attributes given field definitions.
+    A field definition is a dict describing a way to load and store each value
+    in a data field.  A single field is described by a bit mask and bit offset
+    within the unpacked data.  E.g. 'my_field' : ( 0xF0, 4 )
+    @param obj          Target object to populate
+    @param fields       Field definition list
+    @param data         List of data fields resulting from a binary unpack
+    """
+
+    for field, value in zip( fields, data ):
+        for name, desc in field.items():
+            setattr( obj, name, ( ( value & desc[ 0 ] ) >> desc[ 1 ] ) )
+
+
+#=============================================================================
+def unload_fields( obj, fields ):
+    """
+    The complement of load_fields().
+    @param obj          Source object to read
+    @param fields       Field definition list
+    @return             List of data fields suitable for a binary pack
+    """
+
+    data = []
+    for field in fields:
+        value = 0
+        for name, desc in field.items():
+            value |= getattr( obj, name ) << desc[ 1 ]
+        data.append( value )
+    return data
+
+
+#=============================================================================
+class _rfc6455_Frame( object ):
+
+    #=========================================================================
+    OP_CONTINUATION = 0x0
+    OP_TEXT         = 0x1
+    OP_BINARY       = 0x2
+    OP_CLOSE        = 0x8
+    OP_PING         = 0x9
+    OP_PONG         = 0xA
+
+    op_strings = (
+        'continuation', 'text', 'binary', None, None, None, None, None,
+        'close',        'ping', 'pong',   None, None, None, None, None
+    )
+
+    #=========================================================================
+    _hdr = [
+        {
+            'final'   : ( 0x80, 7 ),
+            'control' : ( 0x08, 3 ),
+            'opcode'  : ( 0x0F, 0 )
+        },
+        {
+            'mask'   : ( 0x80, 7 ),
+            'length' : ( 0x7F, 0 )
+        }
+    ]
+
+    _nhdrs = ( ( '', '!H', '!Q' ), ( '4B', '!H4B', '!Q4B' ) )
+
+    _state_init     = 0
+    _state_headers  = 1
+    _state_payload  = 2
+    _state_complete = 3
+
+    #=========================================================================
+    def __init__( self, data = None ):
+        self._buffer   = ''
+        self._hfmt     = ''
+        self._hlen     = 0
+        self._offset   = 2
+        self._state    = self._state_init
+        self._text     = None
+        self._unmasked = None
+        self.control   = 0
+        self.final     = 0
+        self.length    = 0
+        self.mask      = 0
+        self.mask_key  = None
+        self.opcode    = 0
+        if data is not None:
+            self.put( data )
+
+    #=========================================================================
+#    def get_text_frame_data( self, text = None ):
+#        hdr = unload_fields( self, self._hdr )
+#        if text is None:
+#            text = self.get_payload()
+#        else:
+#            self.length = len( text )
+#
+#        return hdr + nhdr + text
+
+    #=========================================================================
+    def get_payload( self ):
+        if self.mask == 1:
+            if self._unmasked is None:
+                self._unmasked = ''.join(
+                    chr(
+                        ord( self._buffer[ i + self._offset ] )
+                        ^
+                        self.mask_key[ i % 4 ]
+                    )
+                    for i in range( self.length )
+                )
+            return self._unmasked
+        return self._buffer[ self._offset : ]
+
+    #=========================================================================
+    def is_complete( self ):
+        return self._state == self._state_complete
+
+    #=========================================================================
+    def is_control( self ):
+        return self.control == 1
+
+    #=========================================================================
+    def is_final( self ):
+        return self.final == 1
+
+    #=========================================================================
+    def is_masked( self ):
+        return self.mask == 1
+
+    #=========================================================================
+    def put( self, data ):
+
+        # append data to internal buffer string
+        self._buffer += data
+        length = len( self._buffer )
+
+        # see if the frame is in the initial state
+        if self._state == self._state_init:
+
+            # skip everything else if we haven't received a second byte yet
+            if length < 2:
+                return
+
+            # load the core header data into the object
+            load_fields(
+                self,
+                self._hdr,
+                struct.unpack( 'BB', self._buffer[ : 2 ] )
+            )
+
+            # check for additional headers with a large payload length
+            if self.length > 125:
+                self._hfmt = self._nhdrs[ self.mask ][ self.length - 125 ]
+
+            # normal payload length
+            else:
+                self._hfmt = self._nhdrs[ self.mask ][ 0 ]
+
+            # length of additional headers
+            self._hlen = struct.calcsize( self._hfmt )
+
+            # offset to the end of the headers, beginning of data
+            self._offset = 2 + self._hlen
+
+            # the frame has basic data available
+            self._state = self._state_headers
+
+        # see if the headers need additional parsing
+        if self._state == self._state_headers:
+
+            # do we have enough data to finish header parsing?
+            if length >= self._offset:
+
+                # parse additional header data (if any)
+                hdat = struct.unpack(
+                    self._hfmt,
+                    self._buffer[ 2 : self._offset ]
+                )
+
+                # see if we should update payload length
+                if self.length > 125:
+                    self.length = hdat[ 0 ]
+
+                # see if we need a masking key
+                if self.mask == 1:
+                    self.mask_key = hdat[ -4 : ]
+
+                # from here on, we are only capturing payload
+                self._state = self._state_payload
+
+        # see if we still need data for the payload
+        if self._state == self._state_payload:
+
+            # see if we have captured enough data for the payload
+            if length >= ( 2 + self._hlen + self.length ):
+
+                # all set
+                self._state = self._state_complete
+
+
+#=============================================================================
+class _rfc6455_Message( object ):
+
+    #=========================================================================
+    def __init__( self ):
+        self._frame  = _rfc6455_Frame()
+        self._frames = []
+
+    #=========================================================================
+    def is_complete( self ):
+        try:
+            return self._frames[ -1 ].is_final()
+        except IndexError:
+            return False
+
+    #=========================================================================
+    def is_control( self ):
+        try:
+            return self._frames[ -1 ].is_control()
+        except IndexError:
+            return False
+
+    #=========================================================================
+    def get_payload( self ):
+        return ''.join( f.get_payload() for f in self._frames )
+
+    #=========================================================================
+    def get_type( self ):
+        try:
+            return self._frames[ 0 ].opcode
+        except IndexError:
+            return None
+
+    #=========================================================================
+    def put( self, data ):
+        self._frame.put( data )
+        if self._frame.is_complete() == True:
+            self._frames.append( self._frame )
+            self._frame = _rfc6455_Frame()
+
+
+#=============================================================================
+class _rfc6455_Stream( object ):
+
+    #=========================================================================
+    def __init__( self ):
+        self._fifo    = []
+        self._message = _rfc6455_Message()
+
+    #=========================================================================
+    def get_message( self ):
+        try:
+            return self._fifo.pop( 0 )
+        except IndexError:
+            raise ValueError
+
+    #=========================================================================
+    def put( self, data ):
+        self._message.put( data )
+        if self._message.is_complete() == True:
+            self._fifo.append( self._message )
+            self._message = _rfc6455_Message()
+
+
+#=============================================================================
+class rfc6455:
+
+
+    #=========================================================================
+    GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+
+
+    #=========================================================================
+    Frame   = _rfc6455_Frame
+    Message = _rfc6455_Message
+    Stream  = _rfc6455_Stream
+
+
+#=============================================================================
 def frame2text( frame ):
 
     # unpack the initial two bytes to check for extent of header data
@@ -155,15 +434,53 @@ def handle( connection, address ):
         base64.b64encode( hashlib.sha1( key + _guid ).digest() )
     )
     connection.send( response )
+    stream = rfc6455.Stream()
+
+    # start the socket handling loop
     while True:
+
+        # block until new data arrives from the client
         data = connection.recv( 1024 )
+
+        # data received from connection
         if len( data ) > 0:
-            # ZIH - here we should decode opcode, and decide what to do
-            text = frame2text( data )
-            data = text2frame( text.upper() )
-            connection.send( data )
+
+            # put data to stream
+            stream.put( data )
+
+            # get the next message in the input stream
+            try:
+                message = stream.get_message()
+            except ValueError:
+                pass
+            else:
+
+                # get type of message
+                mtype = message.get_type()
+
+                # close control message
+                if mtype == rfc6455.Frame.OP_CLOSE:
+                    # ZIH - echo frame payload to client
+                    break
+
+                # ZIH - also look for OP_PING (send OP_PONG)
+
+                # handle text messages
+                elif mtype == rfc6455.Frame.OP_TEXT:
+                    text = message.get_payload()
+
+                    # ZIH - temp
+                    print text
+                    data = text2frame( text.upper() )
+                    connection.send( data )
+
+        # empty data from connection (socket has closed)
         else:
+
+            # shut down socket handling loop
             break
+
+    # close our connection object
     connection.close()
 
 
