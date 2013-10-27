@@ -88,7 +88,8 @@ def unload_fields( obj, fields ):
     for field in fields:
         value = 0
         for name, desc in field.items():
-            value |= getattr( obj, name ) << desc[ 1 ]
+            if hasattr( obj, name ) == True:
+                value |= getattr( obj, name ) << desc[ 1 ]
         data.append( value )
     return data
 
@@ -148,14 +149,49 @@ class _rfc6455_Frame( object ):
             self.put( data )
 
     #=========================================================================
-#    def get_text_frame_data( self, text = None ):
-#        hdr = unload_fields( self, self._hdr )
-#        if text is None:
-#            text = self.get_payload()
-#        else:
-#            self.length = len( text )
-#
-#        return hdr + nhdr + text
+    @classmethod
+    def get_frame_data( cls, payload, binary = False ):
+        """
+        Get the frame data for a given payload.
+        @param payload  The data to transport in the frame
+        @param binary   Set to indicate frame is transporting binary data
+        @return         Frame data suitable for sending over a socket
+        """
+
+        # length of payload
+        length = len( payload )
+
+        # look for frames that need more than 16 bits to represent the length
+        if length > 65535:
+            hfmt = 'BB' + cls._nhdrs[ 0 ][ 2 ]
+            rlen = 127
+
+        # look for frames that need more than 7 bits to represent the length
+        elif length > 125:
+            hfmt = 'BB' + cls._nhdrs[ 0 ][ 1 ]
+            rlen = 126
+
+        # small/normal frame length
+        else:
+            hfmt = 'BB'
+            rlen = length
+
+        # determine opcode for type of data frame
+        opcode = cls.OP_BINARY if binary == True else cls.OP_TEXT
+
+        # set up the basic header information (final, opcode, length)
+        fields = [ ( 0x80 | opcode ), rlen ]
+
+        # long frame needs an additional length field
+        if rlen > 125:
+            fields.append( length )
+
+        # pack the header data into a binary string
+        header = struct.pack( hfmt, *fields )
+
+        # return the header and payload ready for transport
+        return header + payload
+
 
     #=========================================================================
     def get_payload( self ):
@@ -318,6 +354,8 @@ class _rfc6455_Stream( object ):
     #=========================================================================
     def put( self, data ):
         self._message.put( data )
+        # ZIH - this does not handle control messages that occur in the middle
+        #       of a fragmented data message
         if self._message.is_complete() == True:
             self._fifo.append( self._message )
             self._message = _rfc6455_Message()
@@ -335,91 +373,6 @@ class rfc6455:
     Frame   = _rfc6455_Frame
     Message = _rfc6455_Message
     Stream  = _rfc6455_Stream
-
-
-#=============================================================================
-def frame2text( frame ):
-
-    # unpack the initial two bytes to check for extent of header data
-    header = struct.unpack( 'BB', frame[ : 2 ] )
-    payload_length = header[ 1 ] & 0x7F
-
-    # ZIH - should verify ( header[ 0 ] & 0x0F ) == 0x01
-    #       to indicate text frame
-
-    # 16-bit payload length
-    if payload_length == 126:
-        payload_length = struct.unpack( '!H', frame[ 2 : 4 ] )[ 0 ]
-        if header[ 1 ] & 0x80 == 0x80:
-            masking_key = struct.unpack( '!4B', frame[ 4 : 8 ] )
-            offset = 8
-        else:
-            offset = 4
-
-    # 63-bit payload length
-    elif payload_length == 127:
-        payload_length = struct.unpack( '!Q', frame[ 2 : 10 ] )[ 0 ]
-        if header[ 1 ] & 0x80 == 0x80:
-            masking_key = struct.unpack( '!4B', frame[ 10 : 14 ] )
-            offset = 14
-        else:
-            offset = 10
-
-    # 7-bit payload length
-    else:
-        if header[ 1 ] & 0x80 == 0x80:
-            masking_key = struct.unpack( '!4B', frame[ 2 : 6 ] )
-            offset = 6
-        else:
-            offset = 2
-
-    # unpack payload as a byte array
-    payload = struct.unpack( '%dB' % payload_length, frame[ offset : ] )
-
-    # check for masking
-    if header[ 1 ] & 0x80 == 0x80:
-        payload = [
-            payload[ i ] ^ masking_key[ i % 4 ]
-            for i in range( payload_length )
-        ]
-
-    # return the payload as a byte string
-    return ''.join( chr( c ) for c in payload )
-
-
-#=============================================================================
-def text2frame( text ):
-
-    payload_length = len( text )
-
-    # ZIH - only supports text < 126 characters
-
-    frame = struct.pack(
-        'BB%ds' % payload_length,
-        0x81,
-        payload_length,
-        text
-    )
-
-    return frame
-
-
-#=============================================================================
-def hexdump( blob ):
-    import math
-    length   = len( blob )
-    bytes    = struct.unpack( '%dB' % length, blob )
-    per_row  = 16
-    num_rows = int( math.ceil( length / float( per_row ) ) )
-    rows     = []
-    for i in range( num_rows ):
-        offset = i * per_row
-        rows.append(
-            ' '.join(
-                '%02X' % x for x in bytes[ offset : offset + per_row ]
-            )
-        )
-    return '  ' + '\n  '.join( rows )
 
 
 #=============================================================================
@@ -468,10 +421,7 @@ def handle( connection, address ):
                 # handle text messages
                 elif mtype == rfc6455.Frame.OP_TEXT:
                     text = message.get_payload()
-
-                    # ZIH - temp
-                    print text
-                    data = text2frame( text.upper() )
+                    data = rfc6455.Frame.get_frame_data( text.upper() )
                     connection.send( data )
 
         # empty data from connection (socket has closed)
