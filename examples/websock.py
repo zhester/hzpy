@@ -1,34 +1,27 @@
 #!/usr/bin/env python
 
-
-# http://tools.ietf.org/html/rfc6455
-
-# typical HTTP request headers (rfc6455)
-# GET /chat HTTP/1.1
-# Host: server.example.com
-# Upgrade: websocket
-# Connection: Upgrade
-# Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
-# Origin: http://example.com
-# Sec-WebSocket-Protocol: chat, superchat
-# Sec-WebSocket-Version: 13
-
-# validity checking (client requirements):
-#   1. handshake must be valid HTTP request (rfc2616)
-#   2. handshake must be a GET request, and HTTP version must be 1.1
-#   3. request URI must match ws/wss URI
-#   4. request must have Host header
-#   5. request must have Upgrade header set to "websocket"
-#   must have Connection: Upgrade
-#   must have Sec-WebSocket-Version: 13
-# if client doesn't send this correctly, respond with HTTP 400 error code
-#   optional Origin:
-#   optional Sec-WebSocket-Protocol:
-#   optional Sec-WebSocket-Extensions:
+# ZIH - TODO:
+# - handle control messages appropriately
+# - implement interstitial control message handling
+# - validate initial request against the RFC requirements
+# - implement timeouts for clients that don't send pings
+# - implement thread limits, and flood protection
+# - refactor more protocol-specific functionality into rfc6455 class
+# - refactor rfc6455 class into a module
 
 
 """
 A Demonstration WebSocket Server
+
+This script implements a simple WebSocket server.  This is not intended to
+provide HTTP capabilities, but merely handle the "upgrading" of an initial
+WebSocket connection to a normal socket that can be used by an existing,
+socket-level network application.
+
+Call the script with the desired listen port (the default is 9999):
+    ./websock.py 80
+
+See http://tools.ietf.org/html/rfc6455
 """
 
 
@@ -40,22 +33,6 @@ import threading
 
 
 __version__ = '0.0.0'
-
-
-#=============================================================================
-_guid = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
-
-
-#=============================================================================
-_handshake = '''HTTP/1.1 101 Switching Protocols
-Upgrade: websocket
-Connection: Upgrade
-Sec-WebSocket-Origin: %s
-Sec-WebSocket-Location: ws://%s
-Sec-WebSocket-Accept: %s
-Sec-WebSocket-Protocol: sample
-
-'''
 
 
 #=============================================================================
@@ -369,24 +346,78 @@ class rfc6455:
     GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
 
 
+    #=============================================================================
+    _handshake = '''HTTP/1.1 101 Switching Protocols
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Origin: %s
+Sec-WebSocket-Location: ws://%s
+Sec-WebSocket-Accept: %s
+Sec-WebSocket-Protocol: sample
+
+'''
+
+
     #=========================================================================
     Frame   = _rfc6455_Frame
     Message = _rfc6455_Message
     Stream  = _rfc6455_Stream
 
 
+    #=========================================================================
+    @classmethod
+    handshake( cls, connection ):
+        """
+        """
+
+# typical HTTP request headers (rfc6455)
+# GET /chat HTTP/1.1
+# Host: server.example.com
+# Upgrade: websocket
+# Connection: Upgrade
+# Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==
+# Origin: http://example.com
+# Sec-WebSocket-Protocol: chat, superchat
+# Sec-WebSocket-Version: 13
+
+        request  = connection.recv( 1024 )
+        lines    = request.strip().splitlines()
+        headers  = dict( h.split( ': ', 1 ) for h in lines if ': ' in h )
+
+        # ZIH - if request is unacceptable:
+        # raise Exception()
+
+# validity checking (client requirements):
+#   1. handshake must be valid HTTP request (rfc2616)
+#   2. handshake must be a GET request, and HTTP version must be 1.1
+#   3. request URI must match ws/wss URI
+#   4. request must have Host header
+#   5. request must have Upgrade header set to "websocket"
+#   must have Connection: Upgrade
+#   must have Sec-WebSocket-Version: 13
+# if client doesn't send this correctly, respond with HTTP 400 error code
+#   optional Origin:
+#   optional Sec-WebSocket-Protocol:
+#   optional Sec-WebSocket-Extensions:
+
+        key      = headers[ 'Sec-WebSocket-Key' ]
+        response = cls._handshake % (
+            headers[ 'Origin' ],
+            headers[ 'Host' ] + lines[ 0 ].split()[ 1 ],
+            base64.b64encode( hashlib.sha1( key + cls.GUID ).digest() )
+        )
+        connection.send( response )
+
+
 #=============================================================================
 def handle( connection, address ):
-    request  = connection.recv( 1024 )
-    lines    = request.strip().splitlines()
-    headers  = dict( h.split( ': ', 1 ) for h in lines if ': ' in h )
-    key      = headers[ 'Sec-WebSocket-Key' ]
-    response = _handshake % (
-        headers[ 'Origin' ],
-        headers[ 'Host' ] + lines[ 0 ].split()[ 1 ],
-        base64.b64encode( hashlib.sha1( key + _guid ).digest() )
-    )
-    connection.send( response )
+
+    try:
+        rfc6455.handshake( connection )
+    except:
+        connection.close()
+        return
+
     stream = rfc6455.Stream()
 
     # start the socket handling loop
