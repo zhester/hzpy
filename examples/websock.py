@@ -333,6 +333,10 @@ class _rfc6455_Stream( object ):
         self._message.put( data )
         # ZIH - this does not handle control messages that occur in the middle
         #       of a fragmented data message
+        # -- consider handling frames directly at this level, and
+        #    detecting continue frames.  then, make message a subclass
+        #    of frame that can be extended by appending data from future
+        # frame objects
         if self._message.is_complete() == True:
             self._fifo.append( self._message )
             self._message = _rfc6455_Message()
