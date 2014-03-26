@@ -24,6 +24,34 @@ def is_executable( path ):
 
 
 #=============================================================================
+def mkdir( path, mode = 0777 ):
+    """
+    User-friendly os.mkdir() front-end.
+
+    @param path The path to the directory to create.
+    @param mode The numeric permission mode of the new directory.
+                The mode is masked out by the current umask value.
+                The default mode is 0777.
+    """
+
+    # directory exists, no need to continue
+    if os.path.isdir( path ):
+        return
+
+    # a file exists with the same name, throw an exception
+    if os.path.isfile( path ):
+        raise OSError( 'Unable to make directory: file exists at %s' % path )
+
+    # see if recursive directory creation is necessary
+    elif ( '/' in path ) or ( '\\' in path ):
+        os.makedirs( path, mode )
+
+    # create the directory
+    else:
+        os.mkdir( path, mode )
+
+
+#=============================================================================
 def which( target ):
     """
     which utility emulation function.
