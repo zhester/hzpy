@@ -142,12 +142,8 @@ class http( object ):
         # attempt to fetch the JSON response from the host
         response = self._get_url( url )
 
-        # fetch the response headers
-        info = response.info()
-
         # make sure the host says it sent JSON data
-        if ( 'content-type' in info ) \
-            and ( info[ 'content-type' ] == 'application/json' ):
+        if response.ctype[ 0 ] == 'application/json':
 
             # attempt to parse the response data into a native dict/list/etc
             return json.loads( response.read() )
@@ -155,7 +151,7 @@ class http( object ):
         # host did not send the appropriate Content-Type header
         raise http_error(
             'Invalid Content-Type (%s) received for JSON request.\n%s' % (
-                info[ 'content-type' ],
+                response.ctype[ 0 ],
                 response.read()
             )
         )
@@ -180,12 +176,8 @@ class http( object ):
             mimetype = 'application/json'
         )
 
-        # fetch response headers
-        info = response.info()
-
         # make sure the host says it sent JSON data
-        if ( 'content-type' in info ) \
-            and ( info[ 'content-type' ] == 'application/json' ):
+        if response.ctype[ 0 ] == 'application/json':
 
             # attempt to parse the response data into a native dict/list/etc
             return json.loads( response.read() )
@@ -193,7 +185,7 @@ class http( object ):
         # host did not send the appropriate Content-Type header
         raise http_error(
             'Invalid Content-Type (%s) received for JSON request.\n%s' % (
-                info[ 'content-type' ],
+                response.ctype[ 0 ],
                 response.read()
             )
         )
@@ -230,6 +222,25 @@ class http( object ):
 
 
     #=========================================================================
+    def _decorate_response( self, response ):
+        """
+        Decorates response objects for internal use.
+        """
+        # make the content-type header easier to use
+        headers = response.info()
+        dtype   = [ 'text/html', 'utf-8' ]
+        if 'content-type' in headers:
+            ctype = headers[ 'content-type' ]
+            pos = ctype.find( ';' )
+            if pos != -1:
+                dtype[ 0 ] = ctype[ 0 : pos ]
+                dtype[ 1 ] = ( ctype[ ( pos + 1 ) : ] ).strip()
+            else:
+                dtype[ 0 ] = ctype
+        setattr( response, 'ctype', dtype )
+
+
+    #=========================================================================
     def _get_url( self, url ):
         """
         Perform a GET request for the given URL, and return a response object.
@@ -243,6 +254,7 @@ class http( object ):
             )
         except URLError as e:
             raise http_error( 'Error: %d; %s' % e.reason )
+        self._decorate_response( response )
         return response
 
 
@@ -284,6 +296,7 @@ class http( object ):
             raise http_error( 'Error: %d; %s' % e.reason )
 
         # return the response object
+        self._decorate_response( response )
         return response
 
 
