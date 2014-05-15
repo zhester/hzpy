@@ -248,11 +248,11 @@ class http( object ):
         request = urllib2.Request( url )
         try:
             response = urllib2.urlopen( request )
-        except HTTPError as e:
+        except urllib2.HTTPError as e:
             raise http_error(
                 'Error: %d; %s' % ( e.code, _http_codes[ e.code ][ 0 ] )
             )
-        except URLError as e:
+        except urllib2.URLError as e:
             raise http_error( 'Error: %d; %s' % e.reason )
         self._decorate_response( response )
         return response
@@ -288,11 +288,11 @@ class http( object ):
         # send the request, fetch the response
         try:
             response = urllib2.urlopen( request )
-        except HTTPError as e:
+        except urllib2.HTTPError as e:
             raise http_error(
                 'Error: %d; %s' % ( e.code, _http_codes[ e.code ][ 0 ] )
             )
-        except URLError as e:
+        except urllib2.URLError as e:
             raise http_error( 'Error: %d; %s' % e.reason )
 
         # return the response object
