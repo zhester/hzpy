@@ -370,7 +370,7 @@ Sec-WebSocket-Protocol: sample
 
     #=========================================================================
     @classmethod
-    handshake( cls, connection ):
+    def handshake( cls, connection ):
         """
         """
 
