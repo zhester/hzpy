@@ -7,6 +7,7 @@ Offline Web Preprocessor
 
 
 import HTMLParser
+import os
 import re
 import sys
 
@@ -25,6 +26,8 @@ class PpHTMLParser( HTMLParser.HTMLParser ):
         # old-style parent constructor invocation
         HTMLParser.HTMLParser.__init__( self )
         self._ofh = ofh
+    def handle_charref( self, name ):
+        self._ofh.write( '&#%s;' % name )
     def handle_comment( self, comment ):
         self._ofh.write( '<!--%s-->' % comment )
     def handle_data( self, data ):
@@ -33,13 +36,58 @@ class PpHTMLParser( HTMLParser.HTMLParser ):
         self._ofh.write( '<!%s>' % decl )
     def handle_endtag( self, tag ):
         self._ofh.write( '</%s>' % tag )
+    def handle_entityref( self, name ):
+        self._ofh.write( '&%s;' % name )
+    def handle_pi( self, data ):
+        self._ofh.write( '<%s>' % data )
     def handle_starttag( self, tag, attrs ):
-        guts = tag
-        for attr in attrs:
-            guts += ' %s="%s"' % ( attr[ 0 ], attr[ 1 ] )
-        self._ofh.write( '<%s>' % guts )
+        dattrs = dict( attrs )
+        if ( tag == 'link' )                        \
+            and ( 'rel' in dattrs )                 \
+            and ( 'href' in dattrs )                \
+            and ( dattrs[ 'rel' ] == 'stylesheet' ) :
+            # ZIH - fix path referencing
+            self._handle_style( dattrs[ 'href' ] )
+        else:
+            guts = tag
+            for attr in attrs:
+                guts += ' %s="%s"' % ( attr[ 0 ], attr[ 1 ] )
+            self._ofh.write( '<%s>' % guts )
     def handle_startendtag( self, tag, attrs ):
         self.handle_starttag( tag, attrs )
+
+    def _handle_style( self, href ):
+        self._ofh.write( '<style>\n' )
+        with open( href, 'rb' ) as handle:
+            self._ofh.write( handle.read() )
+        self._ofh.write( '\n</style>' )
+
+
+#=============================================================================
+class HyperRef( object ):
+    """
+    Deals with the subtleties of resolving hyperlink references.
+    """
+
+    #========================================================================
+    def __init__( self, reference_file ):
+        """
+        """
+        self._ref      = reference_file
+        self._realpath = os.path.realpath( reference_file )
+        self._dir      = os.path.dirname( self._realpath )
+
+    #========================================================================
+    def relative( self, path ):
+        """
+        """
+        # ZIH TODO
+        # look for URL-y things (http|https)
+        # relative path may or may not be local to file system
+        #realpath = os.path.realpath( path )
+        # is it a file or directory?
+        # compare self._dir to dirname()
+        # look for document root references (/blah/blah)
 
 
 #=============================================================================
@@ -56,20 +104,22 @@ class Preprocessor( object ):
 
 
     #=========================================================================
-    def __init__( self, input_handle, file_type = 0 ):
+    def __init__( self, input_handle, base_path = '.', file_type = 0 ):
         """
         Initializes an instance of a web preprocessor object.
 
         @param input_handle The input file handle from which to read the
                             source file
+        @param base_path    Base path to check for relative references
         @param file_type    The type of file we will be resolving (index into
                             the `formats` list).  If not specified, the class
                             starts by assuming we are resolving an HTML file.
         """
 
         # initalize object state
-        self._input_handle = input_handle
+        self._base_path    = base_path
         self._file_type    = file_type
+        self._input_handle = input_handle
 
 
     #=========================================================================
@@ -118,7 +168,7 @@ class Preprocessor( object ):
         ZIH - not fully implemented
         """
 
-        parser = PpHTMLParser( writer )
+        parser = PpHTMLParser( writer, self._base_path )
         parser.feed( self._input_handle.read() )
 
 
@@ -135,6 +185,7 @@ class Preprocessor( object ):
         scripts = dom.documentElement.getElementsByTagName( 'script' )
         for script in scripts:
             if script.hasAttribute( 'src' ) == True:
+                # ZIH - fix path resolution
                 source = script.getAttribute( 'src' )
                 with open( source, 'rb' ) as handle:
                     cdata = document.createTextNode( handle.read() )
@@ -145,8 +196,9 @@ class Preprocessor( object ):
         links = dom.documentElement.getElementsByTagName( 'link' )
         for link in links:
             if link.getAttribute( 'rel' ) == 'stylesheet':
+                # ZIH - fix path resolution
                 href = link.getAttribute( 'href' )
-                with open( source, 'rb' ) as handle:
+                with open( href, 'rb' ) as handle:
                     cdata = document.createTextNode( handle.read() )
                 style = dom.documentElement.createElement( 'style' )
                 style.appendChild( cdata )
@@ -181,14 +233,17 @@ def proc( ifile, ofile = None ):
 
     # check for optional output file name
     if ofile is None:
-        ofile = re.sub( r'\.(\w+)$', '.out.\1', ifile )
+        ofile = re.sub( r'\.(\w+)$', r'.out.\1', ifile )
+
+    # determine path information
+    base = os.path.dirname( os.path.realpath( ifile ) )
 
     # open the input and output files
     ifh = open( ifile, 'rb' )
     ofh = open( ofile, 'wb' )
 
     # create the preprocessor
-    pp = Preprocessor( ifh, ftype )
+    pp = Preprocessor( ifh, file_type = ftype, base_path = base )
 
     # execute the preprocessor writing contents to the given file
     pp.proc( ofh )
