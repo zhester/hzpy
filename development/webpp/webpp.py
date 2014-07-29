@@ -63,31 +63,6 @@ class PpHTMLParser( HTMLParser.HTMLParser ):
         self._ofh.write( '\n</style>' )
 
 
-#=============================================================================
-class HyperRef( object ):
-    """
-    Deals with the subtleties of resolving hyperlink references.
-    """
-
-    #========================================================================
-    def __init__( self, reference_file ):
-        """
-        """
-        self._ref      = reference_file
-        self._realpath = os.path.realpath( reference_file )
-        self._dir      = os.path.dirname( self._realpath )
-
-    #========================================================================
-    def relative( self, path ):
-        """
-        """
-        # ZIH TODO
-        # look for URL-y things (http|https)
-        # relative path may or may not be local to file system
-        #realpath = os.path.realpath( path )
-        # is it a file or directory?
-        # compare self._dir to dirname()
-        # look for document root references (/blah/blah)
 
 
 #=============================================================================
