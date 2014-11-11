@@ -11,11 +11,14 @@
 import ctypes
 
 #============================================================================
-def print_procs():
+def get_proc_list():
     """
-    Use the Win32 PSAPI to query the system for a list of processes and print
-    their process IDs and image basenames to stdout.
+    Use the Win32 PSAPI to query the system for a list of processes.
+    Various details about each process is returned as a list of dicts.
     """
+
+    # process list storage
+    procs = []
 
     # reference the Windows DLLs that inform us about processes
     psapi = ctypes.windll.psapi
@@ -53,6 +56,9 @@ def print_procs():
         # make sure we got a process handle
         if handle is not None:
 
+            # create storage for process information
+            proc = { 'id' : pids[ i ] }
+
             # query the process for information
             psapi.EnumProcessModules(
                 handle,
@@ -71,14 +77,26 @@ def print_procs():
             basename = module_name.value
             if len( basename ) > 0:
 
-                # print out the information
-                print '%u: %s' % ( pids[ i ], module_name.value )
+                # set basename
+                proc[ 'basename' ] = module_name.value
+
+            # add this process to the list of processes
+            procs.append( proc )
 
             # release the process handle
             krnl.CloseHandle( handle )
 
+    # return the process list information
+    return procs
+
 
 #=============================================================================
 if __name__ == "__main__":
-    print_procs()
+    import sys
+    procs = get_proc_list()
+    for p in procs:
+        pairs = []
+        for ( k, v ) in p.items():
+            pairs.append( '%s:%s' % ( k, str( v ) ) )
+        print '; '.join( pairs )
 
