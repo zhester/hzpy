@@ -76,9 +76,10 @@ class dict_proxy( object ):
 
 
     #=========================================================================
-    def __del__( self, obj ):
+    def __delete__( self, obj ):
         """
         Removes data from a proxied dictionary.
+        Note: Allow underlying exceptions to be raised.
         """
         dobj = getattr( obj, self._dname )
         del dobj[ self._kname ]
