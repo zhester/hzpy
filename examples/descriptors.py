@@ -59,6 +59,8 @@ class dict_proxy( object ):
         Retrieves data from a proxied dictionary.
         Note: Allow underlying exceptions to be raised.
         """
+        if obj is None:
+            return self
         dobj = getattr( obj, self._dname )
         return dobj[ self._kname ]
 
