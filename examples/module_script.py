@@ -74,6 +74,7 @@ def _fun3():
     Example of a conventionally "private" function.
     """
     print 'Whoa!  How\'d you find me?'
+    return 0
 
 
 #-----------------------------------------------------------------------------
@@ -181,6 +182,13 @@ def main( argv ):
     )
     parser.add_argument( *helpargs, **helpkwargs )
     parser.add_argument(
+        '-t',
+        '--test',
+        default = argparse.SUPPRESS,
+        help    = 'Execute script self-test.',
+        action  = 'store_true'
+    )
+    parser.add_argument(
         '-v',
         '--version',
         default = argparse.SUPPRESS,
@@ -257,6 +265,27 @@ def main( argv ):
     # parse the arguments
     args = parser.parse_args( argv[ 1 : ] )
 
+    # check for self-test request
+    if hasattr( args, 'test' ) and args.test == True:
+        import os
+        result = 0
+        script = os.path.basename( __file__ )
+        tests  = [
+            ( script, 'fun0', 'Bob', 'waffles' ),
+            ( script, 'fun0', 'Bob', 'waffles', 3 ),
+            ( script, 'fun0', 'Bob', 'waffles', 4, 'Greetings' )
+        ]
+        for test in tests:
+            try:
+                result = main( *test )
+            except:
+                print 'CAUGHT: {}'.format( sys.exc_info()[0] )
+                raise
+            else:
+                if result != 0:
+                    return result
+        return result
+
     # load arguments into a new dict instance
     params = dict( vars( args ) )
 
@@ -268,6 +297,11 @@ def main( argv ):
 
     # call the function that was set for the specified sub-command
     result = args._call( **params )
+
+    # check return for something non-shell-like
+    if type( result ) is not int:
+        print result
+        return 0
 
     # return result
     return result
