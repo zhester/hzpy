@@ -66,16 +66,14 @@ Specifying absolute paths (`/*`) in either of the lists ignores the `path`
 setting.  This allows configurations to be handled outside of your home
 directory.  You'll still need to have write access to these locations.
 
-The backups are copied to a directory called `.user_backups` in the user's
-directory.  If this is unacceptable, change it:
+Note: The `path` setting is relative to the configuration repository's root.
+By default, this setting is set to `"dotfiles"`.
 
-    {
-        "files" : {
-            "backups" : "here/instead"
-        }
-    }
+The repository is always cloned/checked-out/etc to a directory called
+`.user/configs`.
 
-Or, just set it to `null`, and no backups will be created.  Risky!
+The backups are copied to a directory called `.user/backups` in the user's
+home directory.
 
 ### Environment Overrides
 
@@ -307,7 +305,10 @@ class Configuration( dict ):
             if key == 'merge-priorities':
                 self._merge_priorities = value
             else:
-                self[ key ] = value
+                if key in self:
+                    self._merge_dicts( self[ key ], value )
+                else:
+                    self[ key ] = value
         if 'environment' in self:
             self._override()
 
@@ -332,7 +333,7 @@ class Configuration( dict ):
             # is not a dict
             else:
 
-                # replace the leaf node
+                # add or replace the leaf node
                 target[ key ] = value
 
 
@@ -398,6 +399,35 @@ class Configuration( dict ):
 
 
 #=============================================================================
+class UserConfiguration( Configuration ):
+    """
+    Slight modification of the Configuration class to set up a few
+    application-specific defaults.
+    """
+
+    #=========================================================================
+    def __init__( self, *args, **kwargs ):
+        """
+        Initializes a UserConfiguration object.
+        """
+        super( UserConfiguration, self ).__init__( *args, **kwargs )
+        self[ 'config' ] = {
+            'regexp-match' : False
+        }
+        self[ 'files' ] = {
+            'path'      : 'dotfiles',
+            'blacklist' : [],
+            'whitelist' : None,
+        }
+        self[ 'auto-exec' ] = {
+            'pre'    : [],
+            'post'   : [],
+            'update' : []
+        }
+        self[ 'environment' ] = {}
+
+
+#=============================================================================
 class UserEnvironment( object ):
     """
     User environment management class.
@@ -409,6 +439,7 @@ class UserEnvironment( object ):
         Initializes a UserEnvironment object.
         """
         super( UserEnvironment, self ).__init__()
+        self._test_mode = False
 
 
     #=========================================================================
@@ -417,16 +448,142 @@ class UserEnvironment( object ):
         Runs the installation procedure for a new user environment.
         """
 
-        # determine the type of repository/source of configuration
-        # scan for best tool to use to get it (git, svn, fetch, wget, curl, scp)
-        # download the source (extract it if it's in a balled-up format)
-            # place this in a new directory .user/configs
-        # check for a user.json file, and load it (use a default if none found)
+        # determine the type of repository that hosts the configuration
+        repo_type = get_repo_type( url )
+        if repo_type == 'git':
+            getter = _which( 'git' )
+            if getter is None:
+                raise RuntimeError( 'Unable to locate "git" in path.' )
+            arguments = [ getter, 'clone', url, '{cdir}' ]
+        elif repo_type == 'subversion':
+            getter = _which( 'svn' )
+            if getter is None:
+                raise RuntimeError( 'Unable to locate "svn" in path.' )
+            arguments = [ getter, 'checkout', url, '{cdir}' ]
+        elif repo_type == 'http':
+            clients = [ 'fetch', 'wget', 'curl' ]
+            raise NotImplementedError( 'HTTP repositories not supported.' )
+        elif repo_type == 'scp':
+            raise NotImplementedError( '"scp" repositories not supported.' )
+        else:
+            raise RuntimeError( 'Unable to determine repository type.' )
+
+        # get the user's home directory
+        user_directory = os.path.expanduser( '~' )
+
+        # set the root of file operations
+        user_root = user_directory + os.path.sep + target_directory
+
+        # set the root of configuration backups
+        backup_root = user_root + os.path.sep + 'backups'
+
+        # set the root of the configuration repository
+        config_root = user_root + os.path.sep + 'configs'
+
+        # in test mode, we do not make changes to the user's home
+        if self._test_mode == True:
+
+            # modify stuff only in the test directory
+            user_directory = user_root + os.path.sep + 'test'
+
+        # first-time user file tree setup
+        try:
+            os.mkdir( user_root )
+        except OSError:
+            # directory already exists
+            pass
+        try:
+            os.mkdir( backup_root )
+        except OSError:
+            # directory already exists
+            pass
+
+        # format the command that will fetch the configuration files
+        for index, argument in enumerate( arguments ):
+            match = re.match( r'\{[^}]*\}', arguments )
+            if match is not None:
+                arguments[ index ] = cmd_fmt.format(
+                    getter = getter,
+                    url    = url,
+                    udir   = user_root,
+                    cdir   = config_root
+                )
+
+        # call the command to download the configuration files
+        print subprocess.list2cmdline( arguments )
+        result = subprocess.call( arguments )
+
+        # make sure the command reported success
+        if result != os.EX_OK:
+            raise RuntimeError(
+                'Unable to retrieve configuration repository.'
+            )
+
+        # create a configuration object
+        config = Configuration()
+
+        # check for a user.json file
+        config_file = config_root + os.path.sep + 'user.json'
+        if os.path.is_file( config_file ):
+            with open( config_file ) as cfh:
+                config.load( cfh )
+
+        # set the path to the dotfiles
+        check = config[ 'files' ][ 'path' ]
+        if ( check == ''    ) \
+        or ( check == '/'   ) \
+        or ( check == False ) \
+        or ( check is None  ):
+            dotfile_path = config_root
+        else:
+            dotfile_path = config_root + os.path.sep + check
+
+        # get an initial list of the files in the dotfiles directory
+        dotfiles = os.listdir( dotfile_path )
+
         # run pre-installation scripts in repository
-        #   - $PKG install tcsh vim[-lite] git subversion
-        # create symlinks according to configuration
+        for command in config[ 'auto-exec' ][ 'pre' ]:
+            _exec_command_line( command, config_root )
+
+        # check for a whitelist, and filter the list of dotfiles
+        if config[ 'files' ][ 'whitelist' ] is not None:
+            dotfiles = [
+                d for d in config[ 'files' ][ 'whitelist' ]
+                if d in dotfiles
+            ]
+
+        # assume we're using a blacklist, and filter the list of dotfiles
+        else:
+            dotfiles = [
+                d for d in dotfiles
+                if d not in config[ 'files' ][ 'blacklist' ]
+            ]
+
+        # install each configuration file
+        ### ZIH - need to support files in directories (without nuking
+        ###       existing directories)
+        for dotfile in dotfiles:
+
+            # build some path strings
+            source = dotfile_path + os.path.sep + dotfile
+            target = user_directory + os.path.sep + dotfile
+            backup = backup_root + os.path.sep + dotfile
+
+            # if the target configuration file already exists...
+            if os.path.exists( target ):
+
+                # ...move it to the backups directory
+                os.rename( target, backup )
+
+            # create a link to the dotfile in the repository
+            os.symlink( source, target )
+
+        # create a state file to record things we might need later
+        ### ZIH - do this!
+
         # run post-installation scripts in repository
-        pass
+        for command in config[ 'auto-exec' ][ 'post' ]:
+            _exec_command_line( command, config_root )
 
 
     #=========================================================================
@@ -454,6 +611,16 @@ class UserEnvironment( object ):
 
 
     #=========================================================================
+    def enable_test_mode( self, enable = True ):
+        """
+        Enables a no-risk trial.  If you're not satisfied with the way this
+        executed, it did nothing to your home directory that you can't undo by
+        just deleting the `.user` directory that was created.
+        """
+        self._test_mode = enable
+
+
+    #=========================================================================
     def update():
         """
         Runs the update procedure for an existing user environment
@@ -469,43 +636,60 @@ class UserEnvironment( object ):
 # Functions
 #-----------------------------------------------------------------------------
 
+
 #=============================================================================
-def cmd( arguments, show = False ):
+def _exec_command_line( command, prefix ):
     """
-    Executes arguments (list or string) as a local command, and returns the
-    output as a string.
-
-    @param arguments    A list-like object or a string specifying the shell
-                        command arguments
-    @param show         Whether or not to print the command to stdout
-    @return             The output from the command as a string
-    @throws             subprocess.CalledProcessError
-                        Check `output` and/or `returncode` for details.
+    Executes a command (from a string), allowing all output to pass to STDOUT.
     """
 
-    # ZIH - consider refactoring this to /dev/null
+    # split the arguments
+    arguments = shlex.split( command )
 
-    # check for the need for shell parsing
-    if type( arguments ) is str:
+    # attempt to detect generic commands (not a relative command)
+    proc = arguments[ 0 ]
 
-        # split the arguments
-        arguments = shlex.split( arguments )
+    # this is probably a generic/system command
+    if proc[ 0 ] != '.':
+        check = _which( proc )
+        if check is None:
+            raise RuntimeError(
+                'Unable to locate "{}" in path.'.format( proc )
+            )
+        arguments[ 0 ] = check
 
-    # see if the user wants to see the command
-    if show == True:
+    # this needs to be executed relative to the prefix
+    else:
+        arguments[ 0 ] = prefix + arguments[ 1 : ]
 
-        # print the statement we're about to execute
-        print subprocess.list2cmdline( arguments )
+    # print the statement we're about to execute
+    print subprocess.list2cmdline( arguments )
 
     # attempt to execute the requested command
-    try:
-        output = subprocess.check_output(
-            arguments,
-            stderr = subprocess.STDOUT
-        )
+    result = subprocess.call( arguments )
 
-    # return the output collected from the command
-    return output
+    # return the result of the command
+    return result
+
+
+#=============================================================================
+def get_repo_type( url ):
+    """
+    Determines a repository type (git, subversion, or HTTP) based on the URL.
+    """
+    match = re.match( r'.+\.git$', url )
+    if match is not None:
+        return 'git'
+    match = re.match( r'^https?://', url )
+    if match is not None:
+        return 'http'
+    match = re.match( r'^svn', url )
+    if match is not None:
+        return 'subversion'
+    match = re.match( r'^[\w\.-]+@[\w\.-]+:|/', url )
+    if match is not None:
+        return 'scp'
+    return False
 
 
 #=============================================================================
@@ -644,7 +828,44 @@ def _test_config_tree():
         print 'FAILED: {} != {}'.format( expected, actual )
         return False
 
-    print 'PASSED'
+    return True
+
+
+#=============================================================================
+def _test_get_repo_type():
+    """
+    Test the get_repo_type() function.
+    """
+    cases = [
+        [ 'git',        'ssh://user@host/path/repo.git',        True  ],
+        [ 'git',        'http://user@host:path/repo.git',       True  ],
+        [ 'git',        'https://user@host:path/repo.git',      True  ],
+        [ 'subversion', 'svn+ssh://user@host/path/repo',        True  ],
+        [ 'subversion', 'svn+ssh://user@host:path/repo',        True  ],
+        [ 'subversion', 'svn+http://user@host:path/repo',       True  ],
+        [ 'subversion', 'ssh://user@host:path/repo',            False ],
+        [ 'http',       'http://user@host/path/repo.tar.gz',    True  ],
+        [ 'http',       'svn+ssh://user@host/path/repo.tar.gz', False ],
+        [ 'scp',        'user@host:path/repo.tar.gz',           True  ]
+    ]
+    for case in cases:
+        actual = get_repo_type( case[ 1 ] )
+        if actual != case[ 0 ]:
+            if case[ 2 ] == True:
+                print 'FAILED: {} != {} ({})'.format(
+                    actual,
+                    case[ 0 ],
+                    case[ 1 ]
+                )
+                return False
+        else:
+            if case[ 2 ] == False:
+                print 'FAILED: {} == {} ({})'.format(
+                    actual,
+                    case[ 0 ],
+                    case[ 1 ]
+                )
+                return False
     return True
 
 
@@ -653,13 +874,21 @@ def _test( argv = None ):
     """
     Test various parts of the user configuration installer.
     """
-    tests = [ 'config_tree' ]
+    tests = [ 'config_tree', 'get_repo_type' ]
     for test in tests:
         name = '_test_' + test
         module = sys.modules[ __name__ ]
         if hasattr( module, name ) == True:
             function = getattr( module, name )
-            function()
+            result = function()
+            if result == True:
+                print 'PASSED: {}'.format( test )
+            else:
+                # rely on test to print helpful output
+                return
+        else:
+            print 'FAILED: Test "{}" does not have an executor.'.format( test )
+            return
 
 
 #-----------------------------------------------------------------------------
