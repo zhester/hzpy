@@ -256,13 +256,6 @@ __version__ = '0.0.0'
 
 
 #-----------------------------------------------------------------------------
-# Module-wide Configuration
-#-----------------------------------------------------------------------------
-
-target_directory = '.user'              # destination for cloning/checkouts
-
-
-#-----------------------------------------------------------------------------
 # Classes
 #-----------------------------------------------------------------------------
 
@@ -300,15 +293,29 @@ class Configuration( dict ):
         """
         Load the configuration into the object from a string.
         """
+
+        # parse the configuration file
         tree = json.loads( string )
+
+        # iterate through each root item
         for key, value in tree.items():
+
+            # special configuration item
             if key == 'merge-priorities':
                 self._merge_priorities = value
+
+            # do not allow user configs to modify internal paths
+            elif key == 'paths':
+                continue
+
+            # load all other configuration settings
             else:
                 if key in self:
                     self._merge_dicts( self[ key ], value )
                 else:
                     self[ key ] = value
+
+        # check for environment-based overrides
         if 'environment' in self:
             self._override()
 
@@ -399,6 +406,190 @@ class Configuration( dict ):
 
 
 #=============================================================================
+class Program( object ):
+    """
+    Models a program (script or binary) that can be executed on the system.
+    """
+
+    #=========================================================================
+    def __init__( self, name, args = None, cwd = None ):
+        """
+        Initializes a Program object.
+        """
+
+        # call parent initializer
+        super( Program, self ).__init__()
+
+        # store the given program name
+        self._name = name
+
+        # set/default the arguments list
+        self._args = args if args is not None else []
+
+        # set/default the current directory
+        self._cwd = cwd if cwd is not None else os.getcwd()
+
+        # resolve the program path
+        self._path = self._resolve_path( name, self._cwd )
+
+
+    #=========================================================================
+    def __str__( self ):
+        """
+        Represents this program as a string.
+        """
+        return self.get_command()
+
+
+    #=========================================================================
+    def call( self ):
+        """
+        Execute the program with the current arguments.
+        """
+        return subprocess.call( self.get_arguments() )
+
+
+    #=========================================================================
+    def get_arguments( self ):
+        """
+        Returns a copy of a list of the arguments that are used when this
+        program is called.
+        """
+        arguments = [ self._path ]
+        arguments.extend( self._args )
+        return arguments
+
+
+    #=========================================================================
+    def get_command( self ):
+        """
+        Retrieves the current command-line string of this program.
+        """
+        arguments = [ self._path ]
+        arguments.extend( self._args )
+        return subprocess.list2cmdline( self.get_arguments() )
+
+
+    #=========================================================================
+    def _resolve_path( self, name, cwd ):
+        """
+        Resolves a generic or shorthand program name to the most qualified
+        path to the program.
+        """
+
+        # detect fully specified commands
+        if name[ 0 ] == '/':
+            return name
+
+        # detect commands that are relative to the "current" directory
+        elif name[ 0 ] == '.':
+            if name[ 1 ] == '.':
+                return os.path.dirname( cwd ) + name[ 2 : ]
+            else:
+                return cwd + name[ 1 : ]
+
+        # detect commands relative to the user's home directory
+        elif name[ 0 ] == '~':
+            return os.path.expanduser( name )
+
+        # detect commands that rely on the environment's path
+        else:
+
+            # use the local which utility to attempt to resolve the path
+            check = _which( name )
+            if check is None:
+                raise RuntimeError(
+                    'Unable to locate "{}" in path.'.format( name )
+                )
+            return check
+
+
+#=============================================================================
+class ProgramTemplate( Program ):
+    """
+    Implements a program that specifies arguments with formatted strings that
+    require some subsitution before the program is executed.
+    """
+
+    #=========================================================================
+    def __init__( self, *args, **kwargs ):
+        """
+        Initializes a ProgramTemplate object.
+        """
+
+        # call the parent's initializer
+        super( ProgramTemplate, self ).__init__( *args, **kwargs )
+
+        # set up argument substitution bindings
+        self._bindings = {
+            'args' : self._args,
+            'cwd'  : self._cwd,
+            'ENV'  : os.environ,
+            'name' : self._name,
+            'path' : self._path
+        }
+
+
+    #=========================================================================
+    def bind( self, key, value ):
+        """
+        Bind a key to a new value.
+        """
+        self._bindings[ key ] = value
+
+
+    #=========================================================================
+    def get_arguments( self ):
+        """
+        Override the parent's argument list construction method to check for
+        templated arguments.
+        """
+        arguments = [ self._path ]
+        arguments.extend( self._args )
+        for index, argument in enumerate( arguments ):
+            match = re.match( r'\{[^}]*\}', argument )
+            if match is not None:
+                arguments[ index ] = self.format( argument )
+        return arguments
+
+
+    #=========================================================================
+    def format( self, subject ):
+        """
+        Formats a string based on the internally-bound values.
+        """
+        return subject.format( **self._bindings )
+
+
+#=============================================================================
+class ConfiguredProgram( ProgramTemplate ):
+    """
+    Application-specific version of the ProgramTemplate that incorporates
+    details configuration information.
+    """
+
+    #=========================================================================
+    def __init__( self, *args, **kwargs ):
+        """
+        Initializes a ConfiguredProgram object.
+        """
+
+        # call the parent's initializer
+        super( ConfiguredProgram, self ).__init__( *args, **kwargs )
+
+
+    #=========================================================================
+    def load_configuration( self, config ):
+        """
+        Loads the configuration into the object state.
+        """
+
+        # inject the configuration's root items into the template bindings
+        for key, value in config.items():
+            self.bind( key, value )
+
+
+#=============================================================================
 class UserConfiguration( Configuration ):
     """
     Slight modification of the Configuration class to set up a few
@@ -426,6 +617,18 @@ class UserConfiguration( Configuration ):
         }
         self[ 'environment' ] = {}
 
+        # derived configuration values
+        home = os.path.expanduser( '~' )
+        top  = home + os.path.sep + '.user'
+        self[ 'paths' ] = {
+            'home'    : home,   # user's home directory
+            'top'     : top,    # top of the user configuration directory
+            'configs' : top + os.path.sep + 'configs',
+                                # configuration repository directory
+            'backups' : top + os.path.sep + 'backups'
+                                # existing configuration backup directory
+        }
+
 
 #=============================================================================
 class UserEnvironment( object ):
@@ -450,68 +653,43 @@ class UserEnvironment( object ):
 
         # determine the type of repository that hosts the configuration
         repo_type = get_repo_type( url )
+
+        # set up some basic stuff for the fetching client
         if repo_type == 'git':
-            getter = _which( 'git' )
-            if getter is None:
-                raise RuntimeError( 'Unable to locate "git" in path.' )
-            arguments = [ getter, 'clone', url, '{cdir}' ]
+            getter = ConfiguredProgram(
+                'git',
+                [ 'clone', url, '{paths[configs]}' ]
+            )
         elif repo_type == 'subversion':
-            getter = _which( 'svn' )
-            if getter is None:
-                raise RuntimeError( 'Unable to locate "svn" in path.' )
-            arguments = [ getter, 'checkout', url, '{cdir}' ]
+            getter = ConfiguredProgram(
+                'svn',
+                [ 'checkout', url, '{paths[configs]}' ]
+            )
         elif repo_type == 'http':
-            clients = [ 'fetch', 'wget', 'curl' ]
             raise NotImplementedError( 'HTTP repositories not supported.' )
         elif repo_type == 'scp':
             raise NotImplementedError( '"scp" repositories not supported.' )
         else:
             raise RuntimeError( 'Unable to determine repository type.' )
 
-        # get the user's home directory
-        user_directory = os.path.expanduser( '~' )
-
-        # set the root of file operations
-        user_root = user_directory + os.path.sep + target_directory
-
-        # set the root of configuration backups
-        backup_root = user_root + os.path.sep + 'backups'
-
-        # set the root of the configuration repository
-        config_root = user_root + os.path.sep + 'configs'
-
-        # in test mode, we do not make changes to the user's home
-        if self._test_mode == True:
-
-            # modify stuff only in the test directory
-            user_directory = user_root + os.path.sep + 'test'
+        # create a configuration object
+        config = UserConfiguration()
 
         # first-time user file tree setup
         try:
-            os.mkdir( user_root )
+            os.mkdir( config[ 'paths' ][ 'top' ] )
         except OSError:
             # directory already exists
             pass
         try:
-            os.mkdir( backup_root )
+            os.mkdir( config[ 'paths' ][ 'backups' ] )
         except OSError:
             # directory already exists
             pass
 
-        # format the command that will fetch the configuration files
-        for index, argument in enumerate( arguments ):
-            match = re.match( r'\{[^}]*\}', arguments )
-            if match is not None:
-                arguments[ index ] = cmd_fmt.format(
-                    getter = getter,
-                    url    = url,
-                    udir   = user_root,
-                    cdir   = config_root
-                )
-
         # call the command to download the configuration files
-        print subprocess.list2cmdline( arguments )
-        result = subprocess.call( arguments )
+        print getter.get_command()
+        result = getter.call()
 
         # make sure the command reported success
         if result != os.EX_OK:
@@ -519,14 +697,15 @@ class UserEnvironment( object ):
                 'Unable to retrieve configuration repository.'
             )
 
-        # create a configuration object
-        config = Configuration()
-
-        # check for a user.json file
+        # check for a user.json file in the repository
         config_file = config_root + os.path.sep + 'user.json'
         if os.path.is_file( config_file ):
+
+            # the user has one, update the current configuration
             with open( config_file ) as cfh:
                 config.load( cfh )
+
+############################# ZIH - left off refactoring here
 
         # set the path to the dotfiles
         check = config[ 'files' ][ 'path' ]
@@ -558,6 +737,12 @@ class UserEnvironment( object ):
                 d for d in dotfiles
                 if d not in config[ 'files' ][ 'blacklist' ]
             ]
+
+        # in test mode, we do not make changes to the user's home
+        if self._test_mode == True:
+
+            # modify stuff only in the test directory
+            user_directory = user_root + os.path.sep + 'test'
 
         # install each configuration file
         ### ZIH - need to support files in directories (without nuking
