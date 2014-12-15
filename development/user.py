@@ -77,7 +77,7 @@ home directory.
 
 ### Environment Overrides
 
-The configuration takes environment-specific queues, and can be tweaked for
+The configuration takes environment-specific cues, and can be tweaked for
 different environments, host machines, and/or users.
 
     {
@@ -101,12 +101,12 @@ different environments, host machines, and/or users.
     }
 
 Note: The entire config tree can be overridden within each section.  I've only
-provided examples using the `dotfiles.blacklist` settings.
+provided examples using the `files.blacklist` settings.
 
 Note: The environment keys are taken directly from the user's environment
 variables.  Anything can be specified here.  The keys under eatch "matched"
-environment variables can be glob patterns (according Python's `glob` module).
-For example, you can do something like this:
+environment variables can be glob patterns (according Python's `glob` and/or
+`fnmatch` modules).  For example, you can do something like this:
 
     { "environment" : { "OSTYPE" : { "Linux*" : { ... } } } }
 
