@@ -142,6 +142,16 @@ def _test():
                 with open( path, 'wb' ) as tfh:
                     tfh.write( content.format( *contents[ filename[ 0 ] ] ) )
 
+    # local function for testing the conversion
+    def check_test_files( prefix ):
+        for filename in files:
+            if filename[ 0 ] in contents:
+                path = prefix + os.path.sep + filename
+                with open( path, 'rb' ) as tfh:
+                    actual = tfh.read()
+                    if '\r' in actual:
+                        print 'Failed to convert file {}.'.format( path )
+
     # create a few files in the temp directory
     make_test_files( test_dir )
 
