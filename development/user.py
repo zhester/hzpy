@@ -697,15 +697,16 @@ class UserEnvironment( object ):
                 'Unable to retrieve configuration repository.'
             )
 
+        ### ZIH - this will need to be rolled into a common function for
+        ###       update/restore
+
         # check for a user.json file in the repository
-        config_file = config_root + os.path.sep + 'user.json'
+        config_file = config[ 'paths' ][ 'configs' ] + os.path.sep + 'user.json'
         if os.path.is_file( config_file ):
 
             # the user has one, update the current configuration
             with open( config_file ) as cfh:
                 config.load( cfh )
-
-############################# ZIH - left off refactoring here
 
         # set the path to the dotfiles
         check = config[ 'files' ][ 'path' ]
@@ -713,12 +714,14 @@ class UserEnvironment( object ):
         or ( check == '/'   ) \
         or ( check == False ) \
         or ( check is None  ):
-            dotfile_path = config_root
+            dotfile_path = configs[ 'paths' ][ 'configs' ]
         else:
-            dotfile_path = config_root + os.path.sep + check
+            dotfile_path = config[ 'paths' ][ 'configs' ] + os.path.sep + check
 
         # get an initial list of the files in the dotfiles directory
         dotfiles = os.listdir( dotfile_path )
+
+############################# ZIH - left off refactoring here
 
         # run pre-installation scripts in repository
         for command in config[ 'auto-exec' ][ 'pre' ]:
