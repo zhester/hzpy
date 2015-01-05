@@ -6,7 +6,201 @@ Markdown Parser Module
 """
 
 
+import io
+import StringIO
+
+
 __version__ = '0.0.0'
+
+
+#=============================================================================
+class Input( object ):
+    """
+    Text data input object.  This acts like a read-only file stream for other
+    parts of the module.
+    """
+
+    #=========================================================================
+    def __init__( self, source = None ):
+        """
+        Initializes an Input object.
+        """
+        super( Input, self ).__init__()
+        self._autoclose = False
+        self._stream    = None
+        if source is not None:
+            if hasattr( source, 'read' ) == True:
+                self._stream = source
+            else:
+                self._autoclose = True
+                self._stream    = StringIO.StringIO( source )
+
+
+    #=========================================================================
+    def __del__( self ):
+        """
+        Releases resources needed for an Input object.
+        """
+        if self._autoclose == True:
+            self._stream.close()
+
+
+    #=========================================================================
+    def __getattr__( self, name ):
+        """
+        Catches attribute references that are not defined locally.
+        """
+        if hasattr( self._stream, name ):
+            return getattr( self._stream, name )
+        raise AttributeError(
+            'Attribute "{}" undefined in object.'.format( name )
+        )
+
+
+    #=========================================================================
+    def __str__( self ):
+        """
+        Creates the simple string-like representation of this stream.
+        """
+        if hasattr( self._stream, 'getvalue' ):
+            return self._stream.getvalue()
+        self._stream.seek( 0, io.SEEK_SET )
+        return self._stream.read()
+
+
+    #=========================================================================
+#    def read( self, size = None ):
+#        """
+#        Implements reading from the input stream.
+#        """
+#        if size is None:
+#            return self._stream.read()
+#        return self._stream.read( size )
+
+
+#=============================================================================
+class BlockInput( Input ):
+    """
+    Specializes the text stream input class to be aware of "block level"
+    divisions in the source.  This provides additional benefit to stream-based
+    parsing without needing to read entire files into memory.
+    """
+
+    #=========================================================================
+    def __init__( self, *args, **kwargs ):
+        """
+        Initializes a BlockInput object.
+        """
+        super( BlockInput, self ).__init__( *args, **kwargs )
+        self.nblocks = 0      # number of blocks encountered
+        self.nlines  = 0      # number of lines read from source
+
+
+    #=========================================================================
+    def __iter__( self ):
+        """
+        Declare support for the iterator protocol.
+        """
+        self.nblocks = 0
+        self.nlines  = 0
+        self._stream.seek( 0, io.SEEK_SET )
+        return self
+
+
+    #=========================================================================
+    def next( self ):
+        """
+        Implements iterator-style retrieval of the next block in the input
+        stream.
+        """
+        result = self.readblock()
+        if result == None:
+            raise StopIteration()
+        return result
+
+
+    #=========================================================================
+    def readblock( self ):
+        """
+        Similar in function to the ubiquitous `readline()` I/O function, this
+        method is Markdown block-aware.
+        """
+
+        # define a local function to test the emptiness of any line
+        def is_empty_line( string ):
+            return ( string == '\n' ) or ( string == '\r\n' )
+
+        # read lines until we have a string to begin buffering
+        line = '\n'
+        while line == '\n':
+
+            # read the next line expecting it to be empty
+            line = self._readline()
+
+            # readline() returns an empty string at the end of the file
+            if line == '':
+                break
+
+            # see if the line is not empty, proceed to reading in the block
+            if is_empty_line( line ) == False:
+                break
+
+        # start buffering this block
+        block = line
+
+        # read lines until we hit two empty lines in a row (or EOF)
+        num_empty_lines = 0
+        while num_empty_lines < 2:
+
+            # read the next line out of the file
+            line = self._readline()
+
+            # test for end-of-file
+            if line == '':
+                break
+
+            # test for emptiness
+            if is_empty_line( line ) == True:
+                num_empty_lines += 1
+                continue
+
+            # not empty, add to buffer
+            num_empty_lines = 0
+            block          += line
+
+        # see if anything was read for this block
+        if block == '':
+            return None
+
+        # return the block we read from the stream
+        self.nblocks += 1
+        return block
+
+
+    #=========================================================================
+    def _readline( self ):
+        """
+        Implements an internal version of readline for accounting purposes.
+        """
+        line = self._stream.readline()
+        if line != '':
+            self.nlines += 1
+        return line
+
+
+#=============================================================================
+class Document( object ):
+    """
+    Models a Markdown document.
+    """
+
+    #=========================================================================
+    def __init__( self ):
+        """
+        Initializes a Document object.
+        """
+        super( Document, self ).__init__()
+
 
 
 
@@ -22,6 +216,43 @@ def convert_files( target, source, target_format = None ):
     - html
     """
     pass
+
+
+#=============================================================================
+def _test( *args ):
+    """
+    Run internal unit tests.
+    """
+
+    # create a simple test Markdown document
+    source = """Heading 1
+=========
+
+Paragram under heading 1.
+
+Heading 2
+---------
+
+Paragraph under heading 2.
+This paragraph has multiple lines.
+
+### Heading 3
+
+Another **type** of _heading_.
+
+"""
+
+    ### ZIH early testing
+    block_reader = BlockInput( source )
+    for block in block_reader:
+        print '=== Start Block ==='
+        print block
+        print '=== End Block ==='
+        print 'Num Lines: {}\nNum Blocks: {}'.format(
+            block_reader.nlines,
+            block_reader.nblocks
+        )
+
 
 
 #=============================================================================
