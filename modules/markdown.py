@@ -7,6 +7,7 @@ Markdown Parser Module
 
 
 import io
+import re
 import StringIO
 
 
@@ -123,7 +124,14 @@ class BlockInput( Input ):
     def readblock( self ):
         """
         Similar in function to the ubiquitous `readline()` I/O function, this
-        method is Markdown block-aware.
+        method is block-aware.
+
+        Note: Blocks, here, are defined differently than the rules defined by
+        Markdown.  Markdown allows for separation of blocks by lines
+        containing whitespace characters other than newlines.  For
+        stream-based parsing, this creates a number of challenges.  For
+        simplicity and efficiency, I've decied to modify the definition of an
+        empty line to be that which contains only a newline character.
         """
 
         # define a local function to test the emptiness of any line
@@ -131,46 +139,28 @@ class BlockInput( Input ):
             return ( string == '\n' ) or ( string == '\r\n' )
 
         # read lines until we have a string to begin buffering
-        line = '\n'
-        while line == '\n':
+        line = self._readline()
+        while ( line != '' ) and ( is_empty_line( line ) == True ):
 
-            # read the next line expecting it to be empty
+            # read the next line
             line = self._readline()
 
-            # readline() returns an empty string at the end of the file
-            if line == '':
-                break
+        # readline() returns an empty string at the end of the file
+        if line == '':
+            return None
 
-            # see if the line is not empty, proceed to reading in the block
-            if is_empty_line( line ) == False:
-                break
-
-        # start buffering this block
+        # start buffering this block with the first non-empty line
         block = line
 
-        # read lines until we hit two empty lines in a row (or EOF)
-        num_empty_lines = 0
-        while num_empty_lines < 2:
+        # read lines until we hit an empty line or the EOF
+        line = self._readline()
+        while ( line != '' ) and ( is_empty_line( line ) == False ):
+
+            # add line to buffer
+            block += line
 
             # read the next line out of the file
             line = self._readline()
-
-            # test for end-of-file
-            if line == '':
-                break
-
-            # test for emptiness
-            if is_empty_line( line ) == True:
-                num_empty_lines += 1
-                continue
-
-            # not empty, add to buffer
-            num_empty_lines = 0
-            block          += line
-
-        # see if anything was read for this block
-        if block == '':
-            return None
 
         # return the block we read from the stream
         self.nblocks += 1
