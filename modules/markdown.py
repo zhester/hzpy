@@ -3,6 +3,12 @@
 
 """
 Markdown Parser Module
+======================
+
+References
+----------
+
+http://daringfireball.net/projects/markdown/syntax#html
 """
 
 
@@ -67,16 +73,6 @@ class Input( object ):
             return self._stream.getvalue()
         self._stream.seek( 0, io.SEEK_SET )
         return self._stream.read()
-
-
-    #=========================================================================
-#    def read( self, size = None ):
-#        """
-#        Implements reading from the input stream.
-#        """
-#        if size is None:
-#            return self._stream.read()
-#        return self._stream.read( size )
 
 
 #=============================================================================
@@ -179,6 +175,233 @@ class BlockInput( Input ):
 
 
 #=============================================================================
+class Element( object ):
+    """
+    Models any element within a document.
+    This class should be considered purely abstract.  Use BlockElement and
+    InlineElement for building documents.
+    """
+
+
+    #=========================================================================
+    def get_html( self ):
+        """
+        All inheriting classes must implement this method.
+        """
+        raise NotImplementedError()
+
+
+    #=========================================================================
+    def __init__( self, source ):
+        """
+        Initializes an Element object.
+        """
+
+        # invoke the parent initializer
+        super( Element, self ).__init__()
+
+        # set the Markdown source string
+        self.source = source
+
+        # initialize object state
+        self.attributes = {}
+        self.contents   = self.source.strip()
+        self.name       = 'p'
+        self.position   = {
+            'offset' : -1,
+            'line'   : -1,
+            'column' : -1
+        }
+
+        # invoke customizeable element initialization
+        self._initialize_element()
+
+
+    #=========================================================================
+    def __str__( self ):
+        """
+        Get the bare string representation of this element.
+        """
+        return self.contents
+
+
+    #=========================================================================
+    def set_position( self, offset, line = -1, column = -1 ):
+        """
+        Interface to load string position information into the object.
+        """
+        self.position[ 'offset' ] = offset
+        self.position[ 'line' ]   = line
+        self.position[ 'column' ] = column
+
+
+    #=========================================================================
+    def _get_html_attribute_string( self ):
+        """
+        Constructs an HTML attribute string for this element.
+        """
+
+        # start with a list of key-value pair strings
+        pairs = [
+            '{}="{}"'.format( k, v )
+            for k, v in self.attributes.items()
+        ]
+
+        # check for need to use attributes
+        if len( pairs ) > 0:
+
+            # prepend a space for simple insertion into a tag string
+            return ' ' + ' '.join( pairs )
+
+        # no attributes necessary
+        return ''
+
+
+    #=========================================================================
+    def _get_html_tag_string( self ):
+        """
+        Constructs an HTML tag string for this element.
+        """
+
+        # build attribute string
+        attributes = self._get_html_attribute_string()
+
+        # build tag string
+        return '<{0}{1}>{2}</{0}>'.format(
+            self.name,
+            attributes,
+            self.contents
+        )
+
+
+    #=========================================================================
+    def _initialize_element( self ):
+        """
+        Method that inheriting classes may define if they require customized
+        object initialization.
+        """
+        pass
+
+
+#=============================================================================
+class BlockElement( Element ):
+    """
+    Models a block element in a document.
+    """
+
+    #=========================================================================
+    # list of element detection rules
+    #   the first item is a unique-ish name for the type of element
+    #   the second item is a pattern to test the entire block against
+    #   note: these should be specified, roughly, in order of frequency as
+    #       once a match is found, no further matches are tested
+    #   note: if nothing matches, the element is assumed to be a paragraph
+    rules = [
+        ( 'h_underline', r'([^\n]+)\n([=-]+)' ),
+        ( 'h_hash'     , r'^(#+) *(.+)'       ),
+        ( 'pre'        , r'^\t| {4,}(.+)'     ),
+        ( 'blockquote' , r'^\s*> *(.+)'       ),
+        ( 'ul'         , r'^\s*[*+-] *(.+)'   ),
+        ( 'ol'         , r'^\s*\d+\. *(.+)'   )
+    ]
+
+
+    #=========================================================================
+    def _init_block( self, rule_id, match ):
+        """
+        Initialize internal details for the block element.
+        """
+        if rule_id == 'h_underline':
+            if match.group( 2 )[ 0 ] == '-':
+                self.name = 'h2'
+            else:
+                self.name = 'h1'
+            self.contents = match.group( 1 ).strip()
+        elif rule_id == 'h_hash':
+            level = min( len( match.group( 1 ) ), 6 )
+            self.name = 'h{}'.format( level )
+            self.contents = match.group( 2 ).strip()
+            self.contents = re.sub( r'(\s|#)+$', '', self.contents )
+        ### ZIH - implement other blocks
+        else:
+            self.name = 'p'
+
+
+    #=========================================================================
+    def _parse_inlines( self ):
+        """
+        Parses the current block for all inline elements.
+        """
+        ### ZIH - impelement me
+        pass
+
+
+    #=========================================================================
+    def get_html( self ):
+        """
+        Implement HTML fragment construction for any block element.
+        """
+
+        # construct the attribute string
+        attributes = self._get_html_attribute_string()
+
+        # start the block element markup
+        html = '<{}{}>'.format( self.name, attributes )
+
+        # detect and parse inline elements
+        ### ZIH
+
+        # assemble all the inline elements into the contents of the block
+        ### ZIH
+
+        ### ZIH - temp
+        html += self.contents
+
+        # return the completed block markup
+        return '{}</{}>'.format( html, self.name )
+
+
+    #=========================================================================
+    def _initialize_element( self ):
+        """
+        Perform internal element type detection and content capturing.
+        """
+
+        # attempt to determine the type of block
+        for rule in self.rules:
+            match = re.match( rule[ 1 ], self.source, re.M )
+            if match is not None:
+                self._init_block( rule[ 0 ], match )
+
+
+#=============================================================================
+class InlineElement( Element ):
+    """
+    Models an inline element in a document.
+    """
+
+
+    #=========================================================================
+    def get_html( self ):
+        """
+        Implement HTML fragment construction for any inline element.
+        """
+
+        # ZIH - determine if this tag is self-closing
+
+        # construct the simple tag string
+        return self._get_html_tag_string()
+
+
+    #=========================================================================
+    def _initialize_element( self ):
+        """
+        Perform internal element type detection and content capturing.
+        """
+        pass
+
+
+#=============================================================================
 class Document( object ):
     """
     Models a Markdown document.
@@ -229,19 +452,84 @@ This paragraph has multiple lines.
 ### Heading 3
 
 Another **type** of _heading_.
+This must support `inline code`.
+
+#### Heading 4 #
+
+This demonstrates [simple](http://hzian.com/) inline anchors.  Here's
+[another](http://hzian.com/) link.
+
+##### Heading 5 #####
+
+    /* pre-formatted code is indented                           */
+    /* this might be shell commands or programming code         */
+
+    while( still_going = 1 ) {
+
+        //it would be nice to intelligently "connect" successive code blocks
+        //  (my editor leaves the empty lines free of indentation)
+
+        printf( "<%s src=\\"%s\\"/>", "img", "image.png" );
+
+    }
+
+###### Heading 6
+
+There are \*many\* characters that may be escaped:
+
+\\\\back-slashes\\\\
+\`back-ticks\`
+\*asterisks\*
+\_underscores\_
+\{braces\}
+\[brackets\]
+\(parenthesis\)
+\#hash marks\#
+\+plus signs\+
+\-hyphens\-
+\.periods\.
+\!exclamation points\!
+
+# Another Heading 1
+
+* A
+* Bullet-ed
+* List
+
+1. An
+2. Enumerated
+3. List
+
+> This is a block
+> quote.
+
+# HTML Target Documents
+
+When the output document is HTML, the document output will convert certain
+things into their HTML entities.  This include angle brackets: < and >,
+and ampersands: &.
+
+This is a final paragraph followed by some trailing empty lines.
 
 """
 
     ### ZIH early testing
-    block_reader = BlockInput( source )
-    for block in block_reader:
-        print '=== Start Block ==='
-        print block
-        print '=== End Block ==='
-        print 'Num Lines: {}\nNum Blocks: {}'.format(
-            block_reader.nlines,
-            block_reader.nblocks
-        )
+    if False:
+        block_reader = BlockInput( source )
+        for block in block_reader:
+            print '=== Start Block ==='
+            print block
+            print '=== End Block ==='
+            print 'Num Lines: {}\nNum Blocks: {}'.format(
+                block_reader.nlines,
+                block_reader.nblocks
+            )
+    else:
+        block_reader = BlockInput( source )
+        for block in block_reader:
+            eblock = BlockElement( block )
+            print '=== Block: "{}"'.format( eblock.name )
+            print eblock.get_html()
 
 
 
