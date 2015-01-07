@@ -12,12 +12,26 @@ http://daringfireball.net/projects/markdown/syntax#html
 """
 
 
+import collections
 import io
 import re
 import StringIO
 
 
 __version__ = '0.0.0'
+
+
+#=============================================================================
+# Position information named tuple.
+Position = collections.namedtuple(
+    'Position',
+    [ 'offset', 'line', 'column' ]
+)
+
+
+#=============================================================================
+# Token content named tuple.
+Token = collections.namedtuple( 'Token', [ 'ident', 'value', 'position' ] )
 
 
 #=============================================================================
@@ -60,7 +74,7 @@ class Input( object ):
         if hasattr( self._stream, name ):
             return getattr( self._stream, name )
         raise AttributeError(
-            'Attribute "{}" undefined in object.'.format( name )
+            'Attribute "{}" undefined in Input object.'.format( name )
         )
 
 
@@ -73,6 +87,15 @@ class Input( object ):
             return self._stream.getvalue()
         self._stream.seek( 0, io.SEEK_SET )
         return self._stream.read()
+
+
+    #=========================================================================
+    def getch( self ):
+        """
+        Retrieves the next character from the stream in a slightly more
+        readable/documented interface.
+        """
+        return self._stream.read( 1 )
 
 
 #=============================================================================
@@ -172,6 +195,94 @@ class BlockInput( Input ):
         if line != '':
             self.nlines += 1
         return line
+
+
+#=============================================================================
+class Lexer( object ):
+    """
+    Very minimal/inefficient stream-style lexical parser.
+    """
+
+    #=========================================================================
+    def __init__( self, stream = None, tspecs = None ):
+        """
+        Initializes a Lexer object.
+        `stream` is a text input stream of some type.  It should support a
+            `read()`, `seek()`, and `getch()` method.
+        `tspecs` is a list of 2-tuples that specify token identifiers and
+            their regular expressions for matching the token.
+        """
+        super( Lexer, self ).__init__()
+
+        self._reo   = re.compile( r'\s' )
+                                    # tokenizing regular expression object
+        self._next  = self._reo.match
+                                    # regular expression match iterator
+        self._temp  = ''            # temporary stream storage (fix me!)
+        self.column = 1             # current column in the current line
+        self.line   = 1             # current line in the input
+        self.offset = 0             # current offset into the input
+        self.stream = stream        # text input stream
+        self.tspecs = []            # token specification (list of 2-tuples)
+        if tspecs is not None:
+            self.tspecs = tspecs
+
+
+    #=========================================================================
+    def __iter__( self ):
+        """
+        Declare support for the iterator protocol.
+        """
+        self.stream.seek( 0, io.SEEK_SET )
+        self._temp  = self.stream.read()
+        self._reo   = re.compile(
+            '|'.join(
+                '(?P<{}>{})'.format( i, r ) for ( i, r ) in self.tspecs
+            )
+        )
+        self._next  = self._reo.match
+        self.column = 1
+        self.line   = 1
+        self.offset = 0
+        return self
+
+
+    #=========================================================================
+    def next( self ):
+        """
+        Retrieve the next token from the input stream.
+        """
+
+        # attempt to match the next token in the "stream"
+        match = self._next( self._temp, self.offset )
+
+        # no token found, stop tokenizing
+        if match is None:
+            raise StopIteration()
+
+        # retrieve the token identifier
+        ident = match.lastgroup
+
+        # retrieve the token string
+        value = match.group( ident )
+
+        # determine this token's position in the stream
+        ### ZIH - need a good way to calculate the column
+        position = Position( match.start(), self.line, -1 )
+
+        # create the token tuple for reporting
+        token = Token( ident, value, position )
+
+        # see if this token contained newlines
+        num_newlines = value.count( '\n' )
+        if num_newlines > 0:
+            self.line += num_newlines
+
+        # update the offset into the string
+        self.offset = match.end()
+
+        # return the latest token
+        return token
 
 
 #=============================================================================
@@ -524,13 +635,25 @@ This is a final paragraph followed by some trailing empty lines.
                 block_reader.nlines,
                 block_reader.nblocks
             )
-    else:
+    elif False:
         block_reader = BlockInput( source )
         for block in block_reader:
             eblock = BlockElement( block )
             print '=== Block: "{}"'.format( eblock.name )
             print eblock.get_html()
-
+    else:
+        syntax = 'a + b - c'
+        source = Input( syntax )
+        lexer = Lexer(
+            stream = source,
+            tspecs = [ ( 'L', r'\w' ), ( 'O', r'[+-]' ) ]
+        )
+        for token in lexer:
+            print 'found {} with value of {} at {}'.format(
+                token.ident,
+                token.value,
+                token.position.offset
+            )
 
 
 #=============================================================================
