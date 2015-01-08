@@ -207,43 +207,57 @@ class Lexer( object ):
     def __init__( self, stream = None, tspecs = None ):
         """
         Initializes a Lexer object.
-        `stream` is a text input stream of some type.  It should support a
-            `read()`, `seek()`, and `getch()` method.
-        `tspecs` is a list of 2-tuples that specify token identifiers and
-            their regular expressions for matching the token.
+
+        @param stream
+            Text input stream.  Must support the following methods:
+                `read()`
+                `seek()`
+        @param tspecs
+            A list of 2-tuples that specify token identifiers and their
+            regular expressions for matching the token.
         """
         super( Lexer, self ).__init__()
 
-        self._reo   = re.compile( r'\s' )
-                                    # tokenizing regular expression object
-        self._next  = self._reo.match
-                                    # regular expression match iterator
-        self._temp  = ''            # temporary stream storage (fix me!)
-        self.column = 1             # current column in the current line
-        self.line   = 1             # current line in the input
-        self.offset = 0             # current offset into the input
-        self.stream = stream        # text input stream
-        self.tspecs = []            # token specification (list of 2-tuples)
+        self._last_offset = 0       # the offset of the last matched token
+        self._riter       = None    # regular expression match iterator
+        self._subject     = ''      # subject string to parse
+        self.line         = 1       # current line in the input
+        self.stream       = stream
         if tspecs is not None:
             self.tspecs = tspecs
+        else:
+            self.tspecs = [ ( 'TOKEN', r'\S+' ) ]
 
 
     #=========================================================================
     def __iter__( self ):
         """
-        Declare support for the iterator protocol.
+        Declare support for the iterator protocol, and prepare lexer for
+        tokenized iteration.
+
+        @return
+            The iterator object for extracting tokens from the input stream.
         """
+
+        # read the entire contents of the stream (temp, fix me!)
         self.stream.seek( 0, io.SEEK_SET )
-        self._temp  = self.stream.read()
-        self._reo   = re.compile(
+        self._subject = self.stream.read()
+
+        # compile the regular expression to scan the input string
+        reo = re.compile(
             '|'.join(
                 '(?P<{}>{})'.format( i, r ) for ( i, r ) in self.tspecs
             )
         )
-        self._next  = self._reo.match
-        self.column = 1
-        self.line   = 1
-        self.offset = 0
+
+        # create an iterator for the matches
+        self._riter = reo.finditer( self._subject )
+
+        # initalize the position information
+        self._last_offset = 0
+        self.line         = 1
+
+        # return the iterator object
         return self
 
 
@@ -251,14 +265,23 @@ class Lexer( object ):
     def next( self ):
         """
         Retrieve the next token from the input stream.
+
+        @return
+            A Token object with the following fields:
+                ident:    The token specifier's ID string for this token
+                value:    The token's string value
+                position: A Position object with the following fields:
+                    offset: The token's byte offset into the stream
+                    line:   The token's line number
+                    column: The token's column number
+
+        @raises StopIteration
+            Raised when there are no more tokens in the input stream.
         """
 
         # attempt to match the next token in the "stream"
-        match = self._next( self._temp, self.offset )
-
-        # no token found, stop tokenizing
-        if match is None:
-            raise StopIteration()
+        #   note: when finished, this will raise StopIteration
+        match = self._riter.next()
 
         # retrieve the token identifier
         ident = match.lastgroup
@@ -266,20 +289,41 @@ class Lexer( object ):
         # retrieve the token string
         value = match.group( ident )
 
-        # determine this token's position in the stream
-        ### ZIH - need a good way to calculate the column
-        position = Position( match.start(), self.line, -1 )
+        # get the offset of the matched token
+        offset = match.start()
+
+        # retrieve all ignored characters
+        ignored = self._subject[ self._last_offset : offset ]
+
+        # count newlines between then and now, add to line counter
+        self.line += ignored.count( '\n' )
+
+        # determine the position of the previous newline character
+        try:
+
+            # get the offset of the last newline
+            last_newline = self._subject.rindex( '\n', 0, offset )
+
+        # no previous newline character
+        except ValueError:
+
+            # the first line will be off by one since there is no newline
+            last_newline = -1
+
+        # the column of this token is its offset into the current line
+        column = offset - last_newline
+
+        # create the position tuple for reporting
+        position = Position( offset, self.line, column )
 
         # create the token tuple for reporting
         token = Token( ident, value, position )
 
-        # see if this token contained newlines
-        num_newlines = value.count( '\n' )
-        if num_newlines > 0:
-            self.line += num_newlines
+        # if this token contained newlines, add them to the line count
+        self.line += value.count( '\n' )
 
-        # update the offset into the string
-        self.offset = match.end()
+        # update the ending position of the last-matched token
+        self._last_offset = match.end()
 
         # return the latest token
         return token
@@ -289,8 +333,8 @@ class Lexer( object ):
 class Element( object ):
     """
     Models any element within a document.
-    This class should be considered purely abstract.  Use BlockElement and
-    InlineElement for building documents.
+    This class is meant only for inheriting common functionality, and should
+    be considered purely abstract.
     """
 
 
@@ -318,11 +362,6 @@ class Element( object ):
         self.attributes = {}
         self.contents   = self.source.strip()
         self.name       = 'p'
-        self.position   = {
-            'offset' : -1,
-            'line'   : -1,
-            'column' : -1
-        }
 
         # invoke customizeable element initialization
         self._initialize_element()
@@ -334,16 +373,6 @@ class Element( object ):
         Get the bare string representation of this element.
         """
         return self.contents
-
-
-    #=========================================================================
-    def set_position( self, offset, line = -1, column = -1 ):
-        """
-        Interface to load string position information into the object.
-        """
-        self.position[ 'offset' ] = offset
-        self.position[ 'line' ]   = line
-        self.position[ 'column' ] = column
 
 
     #=========================================================================
@@ -642,17 +671,45 @@ This is a final paragraph followed by some trailing empty lines.
             print '=== Block: "{}"'.format( eblock.name )
             print eblock.get_html()
     else:
-        syntax = 'a + b - c'
-        source = Input( syntax )
-        lexer = Lexer(
-            stream = source,
-            tspecs = [ ( 'L', r'\w' ), ( 'O', r'[+-]' ) ]
-        )
+        example = """/* a comment */
+//a line comment
+
+x = a + b - c; d = 6 * 7;
+s = "Hello \\"World\\" C:\\\\back\\\\slashes\\\\";
+say( s );
+bits = 0x0014 && 0x00CF;
+bad_idea = 1.23E10 + 64e12;
+"""
+        source = Input( example )
+        specs = [
+            ( 'COMMENT'          , r'/\*.*?\*/'                 ),
+            ( 'LINE_COMMENT'     , r'//[^\n]*'                  ),
+            ( 'STRING'           , r'"(?:[^"\\]|\\.)*"'         ),
+            ( 'TICK_STRING'      , r"'(?:[^'\\]|\\.)*'"         ),
+            ( 'BACK_TICK_STRING' , r'`(?:[^`\\]|\\.)*`'         ),
+            ( 'DECIMAL'          , r'\d*\.\d*(?:(?:e|E)\d+)?'   ),
+            ( 'HEX_INTEGER'      , r'0(?:x|X)[0-9a-fA-F]+'      ),
+            ( 'INTEGER'          , r'\d+(?:(?:e|E)\d+)?'        ),
+            ( 'IDENTIFIER'       , r'[a-zA-Z_][a-zA-Z0-9_]*'    ),
+            ( 'OPERATOR'         , r'[~!@#$%^&*=|\\:<>,./?+-]+' ),
+            ( 'BLOCK_OPEN'       , r'[(\[{]'                    ),
+            ( 'BLOCK_CLOSE'      , r'[)\]}]'                    ),
+            ( 'TERMINATOR'       , r';'                         ),
+            ( 'TOKEN_ERROR'      , r'\S+'                       )
+        ]
+        lexer = Lexer( stream = source, tspecs = specs )
+        pos_fmt = '{:>3},{:>3},{:>3}'
+        pos_len = 3 + 1 + 3 + 1 + 3
+        id_len = max( len( spec[ 0 ] ) for spec in specs )
+        fmt = '| {{:{}}} | {{:{}}} | {{}}'.format( id_len, pos_len )
+        print fmt.format( 'ident', 'position', 'value' )
+        print '+' + ( '-' * ( id_len + 2 ) ) \
+            + '+' + ( '-' * ( pos_len + 2 ) ) + '+'
         for token in lexer:
-            print 'found {} with value of {} at {}'.format(
+            print fmt.format(
                 token.ident,
-                token.value,
-                token.position.offset
+                pos_fmt.format( *token.position ),
+                token.value
             )
 
 
