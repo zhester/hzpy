@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding: UTF-8
 
 
 """
@@ -19,7 +20,9 @@ TODO
 
 import bisect
 import collections
+import os
 import re
+import sys
 
 
 __version__ = '0.0.0'
@@ -37,30 +40,49 @@ type_patterns = [
     ( 'INTEGER',     r'\d+(?:[eE][+-]?\d+)?'      ),
 ]
 
+# formatting characters
+fchars = {
+    'ascii' : {
+        'col' : '|',
+        'row' : '-',
+        'pad' : ' ',
+        'trn' : '#',
+        'top' : '+++',
+        'mid' : '+++',
+        'bot' : '+++'
+    },
+    'utf8' : {
+        'col' : u'│',
+        'row' : u'─',
+        'pad' : u' ',
+        'trn' : u'»',
+        'top' : u'┌┬┐',
+        'mid' : u'├┼┤',
+        'bot' : u'└┴┘'
+    }
+}
+
 
 #=============================================================================
-def tabular( data, width = 80 ):
+def tabular( data, width = 80, use_ascii = False ):
     """
     Formats a two-dimensional list in a tabular text format.
 
-    @param data  A two-dimensional list of data to display
-    @param width The maximum width of the table in characters
-    @return      A textual representation of a table
+    @param data      A two-dimensional list of data to display
+    @param width     The maximum width of the table in characters
+    @param use_ascii Set to force plain/ASCII formatting
+    @return          A textual representation of a table
     """
 
     # measure the data
     info        = _column_info( data )
     num_columns = len( info )
 
-    # data item formatting, separators, padding
-    sep    = '|'
-    pad    = ' '
-    joiner = pad + sep + pad
-    left   = sep + pad
-    right  = pad + sep
-    bsep   = '+'
-    bfill  = '-'
-    trunc  = '\xc2' # double, right-angle quote
+    # configure the formatting characters
+    chars  = fchars[ 'ascii' ] if use_ascii else fchars[ 'utf8' ]
+    joiner = chars[ 'pad' ] + chars[ 'col' ] + chars[ 'pad' ]
+    left   = chars[ 'col' ] + chars[ 'pad' ]
+    right  = chars[ 'pad' ] + chars[ 'col' ]
     ifmt   = '{{:<{}}}'
 
     # generates a width-calculation function
@@ -106,7 +128,7 @@ def tabular( data, width = 80 ):
             truncable = truncable[ : : -1 ]
 
             # length of truncation markers (if all columns need them)
-            marker_lengths = len( trunc ) * num_truncable
+            marker_lengths = len( chars[ 'trn' ] ) * num_truncable
 
             # set up a list of "new" widths
             new_widths = widths
@@ -165,11 +187,24 @@ def tabular( data, width = 80 ):
         # generate the list of per-column item format strings
         item_formats = [ ifmt.format( w ) for w in widths ]
 
-    # render a separator bar
-    bar = '{}{}{}'.format(
-        bsep,
-        bsep.join( bfill * ( w + ( 2 * len( pad ) ) ) for w in widths ),
-        bsep
+    # render separator bars
+    nfill = 2 * len( chars[ 'pad' ] )
+    bfill = chars[ 'row' ]
+    bfmt  = '{}{}{}' if use_ascii else u'{}{}{}'
+    bar_top = bfmt.format(
+        chars[ 'top' ][ 0 ],
+        chars[ 'top' ][ 1 ].join( bfill * ( w + nfill ) for w in widths ),
+        chars[ 'top' ][ 2 ]
+    )
+    bar_mid = bfmt.format(
+        chars[ 'mid' ][ 0 ],
+        chars[ 'mid' ][ 1 ].join( bfill * ( w + nfill ) for w in widths ),
+        chars[ 'mid' ][ 2 ]
+    )
+    bar_bot = bfmt.format(
+        chars[ 'bot' ][ 0 ],
+        chars[ 'bot' ][ 1 ].join( bfill * ( w + nfill ) for w in widths ),
+        chars[ 'bot' ][ 2 ]
     )
 
     # create a per-row format string
@@ -181,11 +216,11 @@ def tabular( data, width = 80 ):
     # construct the table
     return '\n'.join(
         [
-            bar,
+            bar_top,
             row_format.format( *headings ),
-            bar,
+            bar_mid,
             '\n'.join( row_format.format( *row ) for row in data[ 1 : ] ),
-            bar
+            bar_bot
         ]
     )
 
@@ -289,6 +324,7 @@ def _test_tabular( log ):
         [ 'a', 'b', 'c',    9,   0.876,   'a slightly longer column' ],
         [ 'a', 'b', 'c', 1259, 201.3,     'a longish column' ],
     ]
+    log.put( tabular( data, use_ascii = True ) )
     log.put( tabular( data ) )
 
     log.put( 'Testing tabular() (truncation)' )
@@ -312,7 +348,13 @@ def _test():
     """
 
     # imports for testing only
+    import codecs
     import inspect
+
+    # this module would like to write UTF-8 to stdout
+    if sys.stdout.encoding != 'UTF-8':
+        writer = codecs.getwriter( 'UTF-8' )
+        sys.stdout = writer( sys.stdout )
 
     # set up a simple logging facility to capture or print test output
     class TestError( RuntimeError ):
@@ -324,7 +366,7 @@ def _test():
             self.put( output )
             raise TestError( output )
         def put( self, message ):
-            sys.stdout.write( '{}\n'.format( message ) )
+            sys.stdout.write( u'{}\n'.format( message ) )
     log = TestLogger()
 
     # list of all module members
@@ -414,7 +456,5 @@ def main( argv ):
 
 #=============================================================================
 if __name__ == "__main__":
-    import os
-    import sys
     sys.exit( main( sys.argv ) )
 
