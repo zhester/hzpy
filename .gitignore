@@ -1,3 +1,4 @@
 *.pyc
 development/keyboard.svg
 utilities/chpy_orig.txt
+dist

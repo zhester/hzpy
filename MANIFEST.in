@@ -1,0 +1,2 @@
+graft modules
+global-exclude *.pyc *.md *.txt *.html *.css *.json
