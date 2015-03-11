@@ -1,4 +1,6 @@
 *.pyc
 development/keyboard.svg
+development/webpp/test.html
 utilities/chpy_orig.txt
 dist
+MANIFEST
