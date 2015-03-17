@@ -69,7 +69,8 @@ def build_and_execute( filename, arguments = None, capture = False ):
         proc = subprocess.Popen(
             arguments,
             stdin  = subprocess.PIPE,
-            stdout = subprocess.PIPE
+            stdout = subprocess.PIPE,
+            stderr = subprocess.STDOUT
         )
         output, errors = proc.communicate( pfh.read() )
 
@@ -81,6 +82,13 @@ def build_and_execute( filename, arguments = None, capture = False ):
 
     # CLI returned zero
     else:
+
+        # MySQL doesn't appear to return proper shell codes if there's an
+        # error, this means it won't trap the exception above, and we need
+        # redirect stderr into stdout, and check all output for errors
+        if re.match( r'^ERROR', output ):
+            print output.strip().split( "\n" )[ 0 ]
+            exit( 1 )
 
         # get number of columns on console
         rows, columns = subprocess.check_output( [ 'stty', 'size' ] ).split()
@@ -218,10 +226,18 @@ def main( argv ):
     # parse the arguments
     args = parser.parse_args( argv[ 1 : ] )
 
+    # construct arguments to client program
+    arguments = []
+    if args.username is not None:
+        arguments.append( '-u' )
+        arguments.append( args.username )
+    if args.password is not None:
+        arguments.append( '-p' + args.password )
+
     # build and execute the SQL source file
     build_and_execute(
         args.source,
-        arguments = [ '-u', args.username, ( '-p' + args.password ) ],
+        arguments = arguments,
         capture   = args.capture
     )
 
