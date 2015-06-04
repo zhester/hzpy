@@ -17,14 +17,25 @@ __version__ = '0.0.0'
 
 quotes = '"\'`'
 whites = ' \t\r\n'
+missme = r'(?:(?!(?P=quote))|[^\\\r\n])'
 
 patterns = {
 
     # double-quoted string (with potentially escaped double quotes inside)
     'dqs' : r'"[^"\\\r\n]*(?:\\.[^"\\\r\n]*)*"',
 
+    # single-quoted string (same as above)
+    'sqs' : r"'[^'\\\r\n]*(?:\\.[^'\\\r\n]*)*'",
+
+    # backtick-quoted string (same as above)
+    'bqs' : r'`[^`\\\r\n]*(?:\\.[^`\\\r\n]*)*`',
+
     # double-, single-, and backtick-quoted strings
-    'mqs' : r'[{0}][^{0}\\\r\n]*(?:\\.[^{0}\\\r\n]*)*[{0}]'.format( quotes ),
+    #'mqs' : r'[{0}][^{0}\\\r\n]*(?:\\.[^{0}\\\r\n]*)*[{0}]'.format( quotes ),
+    'mqs' : r'(?P<quote>[{q}]){m}*(?:\\.{m}*)*(?P=quote)'.format(
+        q = quotes,
+        m = missme
+    ),
 
     # C-style, multiline comments
     'csc' : r'/\*(?:.|[\r\n])*?\*/',
@@ -127,7 +138,23 @@ and a trailing """
     [
         "the 'other /* style */ of' quotes",
         "the 'other /* style */ of' quotes"
-    ]
+    ],
+
+    # strings with embedded, but valid quotes
+    [ 'a "b \'c\' d" e', 'a "b \'c\' d" e' ],
+
+    # strings with embedded comments
+    [ 'a "b \'c\' /* d */ e" f', 'a "b \'c\' /* d */ e" f' ],
+
+    # embedded string with embedded comments
+    [ 'a "b \'c /* d */\' e" f', 'a "b \'c /* d */\' e" f' ],
+
+    # invalid string delimiter
+    [ 'a " # b', 'a " ' ],
+
+    # a comment with a string in it
+    [ 'a # b "c" d', 'a ' ],
+    [ 'a /* b "c" */ d', 'a  d' ]
 
 ]
 
@@ -140,6 +167,8 @@ def _replacer( match ):
     @param match The MatchObject instance for the current match
     @return      The string to use in place of the current match
     """
+
+    #print( '## Match:', match.group( 0 ), 'Groups:', match.groups() )
 
     # get the entire match string and the first subgroup
     g0, g1 = match.group( 0, 1 )
@@ -185,11 +214,11 @@ def print_multiline( left, right ):
     max_line  = max( max_left, max_right )
     box_bar   = '-' * max_line
     bar       = '+{0}+{0}+'.format( box_bar )
-    print bar
+    print( bar )
     fmt = '|{{:{0}}}|{{:{0}}}|'.format( max_line )
     for left_line, right_line in zip( l_lines, r_lines ):
-        print fmt.format( left_line, right_line )
-    print bar
+        print( fmt.format( left_line, right_line ) )
+    print( bar )
 
 
 #=============================================================================
@@ -219,9 +248,9 @@ def run_tests():
 
         # test the results
         if actual == expected:
-            print 'PASSED test case #{}'.format( test_case_offset )
+            print( 'PASSED test case #{}'.format( test_case_offset ) )
         else:
-            print 'FAILED test case #{}'.format( test_case_offset )
+            print( 'FAILED test case #{}'.format( test_case_offset ) )
             failures += 1
 
         # increment to next test case
@@ -229,9 +258,9 @@ def run_tests():
 
     # display complete test result
     if failures == 0:
-        print '*** All Tests PASSED ***'
+        print( '*** All Tests PASSED ***' )
     else:
-        print '*** {} Tests FAILED ***'.format( failures )
+        print( '*** {} Tests FAILED ***'.format( failures ) )
 
     # return test status
     return 0 if failures == 0 else 1
