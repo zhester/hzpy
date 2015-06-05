@@ -2,7 +2,15 @@
 
 
 """
-Code and Configuration Comments Regular Expressions
+Code and Configuration Comments Parsing and Stripping
+
+This module is designed to make it easy to remove or retrieve comments from a
+source file.  This is accomplished in a single pass using a relatively complex
+regular expression.  The module provides two interface functions: `get()`
+and `strip()`.
+
+If the pattern itself is of interest, it is a visible property of the module:
+`pattern`.
 """
 
 
@@ -13,13 +21,57 @@ __version__ = '0.0.0'
 
 
 #=============================================================================
+# Language Comment Documentation
+
+# list of single-line comment markers in various languages
+single_line_comments = [
+    '#', '//', ';', "'", '"', '--', 'REM', 'Rem', '::', '!', '%', '\\'
+]
+single_line_map = [
+    ( 'shell', 'Perl', 'PHP', 'Python', 'conf', 'Apache', 'Ruby', 'Make',
+      'Bash', 'Bourne Shell', 'C Shell', 'Tcl' ),
+    ( 'C', 'C++', 'Java', 'PHP', 'JavaScript', 'ActionScript', 'ECMAScript' ),
+    ( 'ini', 'Lisp', 'assembly' ),
+    ( 'Visual Basic', 'VBScript' ),
+    ( 'Vimscript' ),
+    ( 'SQL', 'Haskell', 'Ada', 'Lua', 'VHDL', 'SGML' ),
+    ( 'batch' ),
+    ( 'batch', 'Visual Basic', 'VBScript' ),
+    ( 'batch' ),
+    ( 'Fortran 90' ),
+    ( 'MATLAB' ),
+    ( 'Forth' )
+]
+
+# list of multi-line comment markers in various languages
+multi_line_comments = [
+    '/*~*/', '<!-- ~ -->', '{-~-}', '%{\n~\n}%', '(*~*)', '=begin~=end',
+    '=begin~=cut', '#|~|#', '--[[~]]', '--[[=[~]=]', '<#~#>'
+]
+multi_line_map = [
+    ( 'C', 'C++', 'Java', 'JavaScript', 'PHP', 'SQL', 'CSS', 'Objective-C',
+      'C#', 'ActionScript', 'ECMAScript' ),
+    ( 'SGML', 'XML', 'HTML', 'XHTML' ),
+    ( 'Haskell' ),
+    ( 'MATLAB' ),
+    ( 'Pascal', 'OCaml' ),
+    ( 'Ruby' ),
+    ( 'Perl' ),
+    ( 'Lisp' ),
+    ( 'Lua' ),
+    ( 'Lua' ),
+    ( 'Bash', 'Bourne Shell', 'C Shell', 'Tcl' )
+]
+
+
+#=============================================================================
 # Utility Pattern Fragments
 
-quotes = '"\'`'
-whites = ' \t\r\n'
-missme = r'(?:(?!(?P=quote))|[^\\\r\n])'
+_quotes = '"\'`'
+_whites = ' \t\r\n'
+_missme = r'(?:(?!(?P=quote))|[^\\\r\n])'
 
-patterns = {
+_patterns = {
 
     # double-quoted string (with potentially escaped double quotes inside)
     'dqs' : r'"[^"\\\r\n]*(?:\\.[^"\\\r\n]*)*"',
@@ -31,10 +83,10 @@ patterns = {
     'bqs' : r'`[^`\\\r\n]*(?:\\.[^`\\\r\n]*)*`',
 
     # double-, single-, and backtick-quoted strings
-    #'mqs' : r'[{0}][^{0}\\\r\n]*(?:\\.[^{0}\\\r\n]*)*[{0}]'.format( quotes ),
+    #'mqs' : r'[{0}][^{0}\\\r\n]*(?:\\.[^{0}\\\r\n]*)*[{0}]'.format( _quotes ),
     'mqs' : r'(?P<quote>[{q}]){m}*(?:\\.{m}*)*(?P=quote)'.format(
-        q = quotes,
-        m = missme
+        q = _quotes,
+        m = _missme
     ),
 
     # C-style, multiline comments
@@ -44,119 +96,142 @@ patterns = {
     'ssc' : r'(?://|#).*$',
 
     # allow string formatting easy access to these
-    'quotes' : quotes,
-    'whites' : whites
+    'quotes' : _quotes,
+    'whites' : _whites
 }
+
 
 #=============================================================================
 # The Comment Stripping Pattern
+#
+# The strategy involves judiciously attempting to match string literals first.
+# The two top-level alternatives are to match either a multi-line comment or a
+# single-line comment (in that order).  The replacer or consumer of the match
+# must then evaluate if the pattern matched a string by checking if the first
+# subgroup has been populated.  If not, the (entire) pattern has matched a
+# comment.
+#
+# This strategy allows us to protect the stripping system from nearly all
+# conceivable (and valid) permutations of embedding string literals and
+# comments.
 
-_pattern = '({mqs})|[{whites}]?{csc}[{whites}]?|{ssc}'.format( **patterns )
+_pattern = '({mqs})|[{whites}]?{csc}[{whites}]?|{ssc}'.format( **_patterns )
 
 
 #=============================================================================
-# Test Cases : [ input, expected ]
+# The Compiled Pattern (for external users)
 
-test_cases = [
+pattern = re.compile( _pattern, flags = re.MULTILINE )
+
+
+#=============================================================================
+# Test Cases : [ key, input, expected ]
+
+_test_cases = [
+
+    # no comments, just a line
+    [ 'base-single', 'a b c', 'a b c' ],
 
     # no comments, just multiple lines
-    [
-        """a string with no
-comments, but
-multiple lines""",
-        """a string with no
-comments, but
-multiple lines"""
-    ],
-
-    # shell comment
-    [
-        """a string with
-# a shell-style comment
-and multiple lines""",
-        """a string with
-
-and multiple lines"""
-    ],
-
-    # all comments on all lines
-    [
-        """# a string
-# that is all
-# shell comments""",
-        '\n\n'
-    ],
-
-    # mixed comments
-    [
-        """# a string
-// with a mixture
-/* of comment types */""",
-        '\n\n'
-    ],
-
-    # mixed comments with nested comment symbols
-    [
-        """# a string /* with */
-/* messed up // comments */
-and one real part /* with comments */
-and a trailing # comment""",
-        """
-
-and one real part 
-and a trailing """
-    ],
-
-    # valid tokens, artificial/injected separation
-    [ 'a/* AB */b', 'a b' ],
+    [ 'base-multi', 'a\nb\nc', 'a\nb\nc' ],
 
     # multiple lines inside comment
-    [ 'a /* A\nB */ b', 'a  b' ],
+    [ 'multi', 'a /* b\nc */ d', 'a  d' ],
+
+    # shell comment
+    [ 'shell', 'a\n# b\nc', 'a\n\nc' ],
+
+    # all shell comments on all lines
+    [ 'shell-all', '# a\n# b\n# c', '\n\n' ],
+
+    # mixed comment styles on all lines
+    [ 'mixed-all', '# a\n// b\n/* c */', '\n\n' ],
+
+    # mixed comments with nested comment symbols
+    [ 'mixed-emb',
+      '# a /* b */\n/* c // d */\ne /* f */\ng # h',
+      '\n\ne \ng ' ],
+
+    # valid tokens, artificial/injected separation
+    [ 'multi-inject', 'a/* b */c', 'a c' ],
 
     # asterisk inside comment
-    [ 'a /* A*B */ b', 'a  b' ],
-
-    # island tokens between comments
-    [ 'a /* AB */ b /* CD */ c', 'a  b  c' ],
+    [ 'multi-asterisk', 'a /* b*c */ d', 'a  d' ],
 
     # multiple asterisks
-    [ 'a /** A ** B **/ b', 'a  b' ],
+    [ 'multi-astersiks', 'a /** b ** c **/ d', 'a  d' ],
+
+    # island tokens between comments
+    [ 'multi-island', 'a /* b */ c /* d */ e', 'a  c  e' ],
 
     # shell-style comment in a quoted string
-    [
-        'a "quoted # comment" character',
-        'a "quoted # comment" character'
-    ],
+    [ 'str-emb-shell', 'a "b # c" d', 'a "b # c" d' ],
 
     # C++-style comment in a quoted string
-    [
-        'another "inside // quotes"',
-        'another "inside // quotes"'
-    ],
+    [ 'str-emb-c++', 'a "b // c" d', 'a "b // c" d' ],
 
     # C-style comment in a single-quoted string
-    [
-        "the 'other /* style */ of' quotes",
-        "the 'other /* style */ of' quotes"
-    ],
+    [ 'str-emb-c', "a 'b /* c */ d' e", "a 'b /* c */ d' e" ],
 
     # strings with embedded, but valid quotes
-    [ 'a "b \'c\' d" e', 'a "b \'c\' d" e' ],
+    [ 'str-emb-str', 'a "b \'c\' d" e', 'a "b \'c\' d" e' ],
 
     # strings with embedded comments
-    [ 'a "b \'c\' /* d */ e" f', 'a "b \'c\' /* d */ e" f' ],
+    [ 'str-emb-multi', 'a "b \'c\' /* d */ e" f', 'a "b \'c\' /* d */ e" f' ],
 
     # embedded string with embedded comments
-    [ 'a "b \'c /* d */\' e" f', 'a "b \'c /* d */\' e" f' ],
+    [ 'str-emb-str-multi',
+      'a "b \'c /* d */\' e" f',
+      'a "b \'c /* d */\' e" f' ],
 
     # invalid string delimiter
-    [ 'a " # b', 'a " ' ],
+    [ 'str-invalid', 'a " # b', 'a " ' ],
 
-    # a comment with a string in it
-    [ 'a # b "c" d', 'a ' ],
-    [ 'a /* b "c" */ d', 'a  d' ]
+    # comments with embedded strings
+    [ 'shell-emb-str', 'a # b "c" d', 'a ' ],
+    [ 'multi-emb-str', 'a /* b "c" */ d', 'a  d' ]
 
 ]
+
+
+#=============================================================================
+def get( string ):
+    """
+    Iteratively yields all comments from the given string.
+
+    @param string A string from which all comments will be retrieved
+    @yield        A string containing the current comment
+    """
+
+    # perform an iterative search on the subject string
+    comments = re.finditer( _pattern, string, flags = re.MULTILINE )
+
+    # iterate through matched patterns
+    for comment in comments:
+
+        # retrieve the complete match, and the first subgroup
+        g0, g1 = comment.group( 0, 1 )
+
+        # the first subgroup is from string literal matching.  if the subgroup
+        # is populated, ignore it, and advance to the next match.  if the
+        # subgroup is None, the entire pattern has matched a comment.
+        if g1 is None:
+
+            # yield this comment (optionally matched whitespace is removed)
+            yield g0.strip()
+
+
+#=============================================================================
+def strip( string ):
+    """
+    Removes all comments from the given string.
+
+    @param string A string from which all comments will be removed
+    @return       A string with no comments
+    """
+
+    # run the regular expression against the subject string
+    return re.sub( _pattern, _replacer, string, flags = re.MULTILINE )
 
 
 #=============================================================================
@@ -184,22 +259,21 @@ def _replacer( match ):
 
     # restore optionally-matched surrounding whitespace characters
     replace = ''
-    if g0[ 0 ] in whites:
+    if g0[ 0 ] in _whites:
         replace += g0[ 0 ]
-    if g0[ -1 ] in whites:
+    if g0[ -1 ] in _whites:
         replace += g0[ -1 ]
     return replace
 
 
 #=============================================================================
-def print_multiline( left, right ):
+def _print_multiline( left, right ):
     """
     Prints a pair of multi-line strings side-by-side.
 
     @param left  The left-hand multi-line string
     @param right The right-hand multi-line string
     """
-
     l_lines   = left.split( '\n' )
     r_lines   = right.split( '\n' )
     nl_lines  = len( l_lines )
@@ -222,39 +296,65 @@ def print_multiline( left, right ):
 
 
 #=============================================================================
-def run_tests():
+def _run_tests( run ):
     """
-    Runs each test case through each test pattern providing feedback on what
-    works, and how well.
+    Runs each test case (for a selected test target) through each test pattern
+    providing feedback on what works, and how well.
+
+    @param run The test target to execute (strip or get)
+    @return    The result of test execution (0 = success)
     """
 
     # count the number of failures
     failures = 0
 
-    # iterate through each test case
-    test_case_offset = 0
-    for string, expected in test_cases:
+    # get testing
+    if ( run == 'all' ) or ( run == 'get' ):
 
-        # strip the comments using the current pattern
-        actual = re.sub(
-            _pattern,
-            _replacer,
-            string,
-            flags = re.MULTILINE
-        )
+        # example of various styles of comments
+        case = """a
+//b
+c
+#d
+e
+f /* g */ h
+/*
+ * i j
+ * k l
+ */
+m"""
 
-        # display the results
-        print_multiline( string, actual )
+        # this should be the resulting list of comments
+        expected = [ '//b', '#d', '/* g */', '/*\n * i j\n * k l\n */' ]
 
-        # test the results
+        # fetch the comments all at once (not a typical usage pattern)
+        actual = list( get( case ) )
+
+        # check what was retrieved
         if actual == expected:
-            print( 'PASSED test case #{}'.format( test_case_offset ) )
+            print 'PASSED get test "mixed"'
         else:
-            print( 'FAILED test case #{}'.format( test_case_offset ) )
+            print 'FAILED get test "mixed"'
+            print 'Expected:', expected
+            print 'Actual  :', actual
             failures += 1
 
-        # increment to next test case
-        test_case_offset += 1
+    # strip testing
+    if ( run == 'all' ) or ( run == 'strip' ):
+
+        # iterate through each test case
+        for key, string, expected in _test_cases:
+
+            # strip the comments
+            actual = strip( string )
+
+            # test the results
+            if actual == expected:
+                print( 'PASSED strip test "{}"'.format( key ) )
+            else:
+                print( 'FAILED strip test "{}"'.format( key ) )
+                _print_multiline( string, actual )
+                failures += 1
 
     # display complete test result
     if failures == 0:
@@ -290,6 +390,13 @@ def main( argv ):
         action  = 'help'
     )
     parser.add_argument(
+        '-r',
+        '--run',
+        default = 'all',
+        help    = 'Specify the test to execute (all, get, or strip).',
+        nargs   = '?'
+    )
+    parser.add_argument(
         '-v',
         '--version',
         default = False,
@@ -302,7 +409,7 @@ def main( argv ):
     args = parser.parse_args( argv[ 1 : ] )
 
     # run all the tests, and return status to shell
-    return run_tests()
+    return _run_tests( args.run )
 
 
 #=============================================================================
