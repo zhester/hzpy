@@ -267,7 +267,7 @@ def _replacer( match ):
 
 
 #=============================================================================
-def _print_multiline( left, right ):
+def _print_multiline( fh, left, right ):
     """
     Prints a pair of multi-line strings side-by-side.
 
@@ -287,12 +287,12 @@ def _print_multiline( left, right ):
     max_right = max( len( line ) for line in r_lines )
     max_line  = max( max_left, max_right )
     box_bar   = '-' * max_line
-    bar       = '+{0}+{0}+'.format( box_bar )
-    print( bar )
-    fmt = '|{{:{0}}}|{{:{0}}}|'.format( max_line )
+    bar       = '+{0}+{0}+\n'.format( box_bar )
+    fh.write( bar )
+    fmt = '|{{:{0}}}|{{:{0}}}|\n'.format( max_line )
     for left_line, right_line in zip( l_lines, r_lines ):
-        print( fmt.format( left_line, right_line ) )
-    print( bar )
+        fh.write( fmt.format( left_line, right_line ) )
+    fh.write( bar )
 
 
 #=============================================================================
@@ -353,7 +353,7 @@ m"""
                 print( 'PASSED strip test "{}"'.format( key ) )
             else:
                 print( 'FAILED strip test "{}"'.format( key ) )
-                _print_multiline( string, actual )
+                _print_multiline( sys.stdout, string, actual )
                 failures += 1
 
     # display complete test result
