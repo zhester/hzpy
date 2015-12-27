@@ -22,9 +22,15 @@
 
 
 import os
-import Tkinter as tk
-import tkMessageBox
-import ttk
+try:
+    import Tkinter as tk
+except ImportError:
+    import tkinter as tk
+    from tkinter import ttk
+    from tkinter import messagebox
+else:
+    import tkMessageBox as messagebox
+    import ttk
 
 
 #=============================================================================
@@ -34,7 +40,7 @@ class MYAPP( ttk.Frame ):
     # application info
     _author  = 'Zac Hester <zac.hester@gmail.com>'
     _date    = '2013-06-28'
-    _icon    = 'tk.ico'
+    #_icon    = 'tk.ico'
     _title   = 'My Application'
     _version = '0.0.0'
 
@@ -63,14 +69,29 @@ class MYAPP( ttk.Frame ):
         self.wvars = {}
 
         # set the application-wide default icon
-        if os.path.exists( 'tk.ico' ):
-            self.master.call(
-                'wm',
-                'iconbitmap',
-                self.master._w,
-                '-default',
-                MYAPP._icon
-            )
+        if os.name == 'nt':
+            ipath = os.path.realpath( 'tk.ico' )
+        else:
+            ipath = os.path.realpath( 'tk.xpm' )
+        if os.path.exists( ipath ):
+            try:
+                self.master.iconbitmap( ipath )
+            except tk.TclError:
+                photo = tk.PhotoImage( ipath )
+                self.master.call(
+                    'wm',
+                    'iconphoto',
+                    self.master._w,
+                    photo
+                )
+                # old way
+                #self.master.call(
+                #    'wm',
+                #    'iconbitmap',
+                #    self.master._w,
+                #    '-default',
+                #    ipath
+                #)
 
         # set the application title
         self.master.title( MYAPP._title )
@@ -308,7 +329,7 @@ winDirSel.columnconfigure(0,weight=1)
     #=========================================================================
     def _cmd_about( self ):
         """ Displays the application about info """
-        tkMessageBox.showinfo(
+        messagebox.showinfo(
             'About %s' % MYAPP._title,
             '%s\nVersion: %s\nDate: %s\nAuthor: %s' % (
                 MYAPP._title,
@@ -321,7 +342,7 @@ winDirSel.columnconfigure(0,weight=1)
     #=========================================================================
     def _cmd_hello( self ):
         """ Example of using a message box """
-        tkMessageBox.showinfo( 'Hello', 'Well, hello there!' )
+        messagebox.showinfo( 'Hello', 'Well, hello there!' )
 
 
 
