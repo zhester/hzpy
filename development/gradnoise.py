@@ -192,8 +192,10 @@ def test_simple():
     """
     Tests simple gradient noise.
     """
-    w = 640
-    h = 640
+    w = 320
+    h = 1024
+    start = 0x08262AFF
+    stop  = 0x001620FF
 
     ### DEBUGGING
     dfh = open( 'dbg.csv', 'w' )
@@ -202,8 +204,8 @@ def test_simple():
     def gen_simple( w, h ):
 
         # create some low-delta gradients
-        rg = Gradient( 0x002244FF, 0x00224AFF )
-        ng = Gradient( 0x002244FF, 0x00224AFF )
+        rg = Gradient( start, stop )
+        ng = Gradient( start, stop )
         ng.channel_filter = simple_random_filter
 
         # create a row of pixels
@@ -240,7 +242,8 @@ def test_simple():
                     ( ( color >>  8 ) & 0xFF )
                 ]
                 pixels.extend( values )
-            dbg.append( '{:08X}'.format( color ) )
+                if col % 32 == 0:
+                    dbg.append( '{:08X}'.format( color ) )
             dfh.write( '{}\n'.format( ','.join( dbg ) ) )
 
             # yield a full row of pixel data
