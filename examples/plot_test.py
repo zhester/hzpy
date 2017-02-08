@@ -103,7 +103,8 @@ def main( argv ):
         filename = 'plot_test.png'
 
     # Save the plots to an image file.
-    pyplot.savefig( filename, dpi = 90 )
+    #pyplot.savefig( filename, dpi = 90 )
+    pyplot.show()
 
 
 if __name__ == "__main__":
